@@ -1,0 +1,31 @@
+package com.amsati.shopscale.catalog;
+
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Entity
+@Table(name = "product_variants")
+@Getter @Setter @NoArgsConstructor
+public class ProductVariant {
+    @Id @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+    private UUID businessId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "product_id")
+    private Product product;
+    private String label;
+    private String sku;
+    private String barcode;
+    private BigDecimal price;
+    private BigDecimal cost = BigDecimal.ZERO;
+    private int quantity;
+    private int lowStockThreshold = 5;
+    private boolean active = true;
+    private Instant createdAt = Instant.now();
+    private Instant updatedAt = Instant.now();
+}
