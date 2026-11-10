@@ -13,6 +13,7 @@ import com.amsati.shopscale.security.Tenant;
 import com.amsati.shopscale.subscription.SubscriptionService;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -31,13 +32,14 @@ public class InventoryService {
     private final SubscriptionService subscriptions;
     private final AuditService audit;
     private final AccessService access;
+    private final com.amsati.shopscale.unit.UnitService units;
 
     public enum AdjustType { RESTOCK, DAMAGED, CORRECTION, ADJUSTMENT }
 
-    public record AdjustRequest(@NotNull UUID variantId, @NotNull AdjustType type, @NotNull Integer quantity,
-                                @Size(max = 300) String note) {}
+    public record AdjustRequest(@NotNull UUID variantId, @NotNull AdjustType type, @NotNull BigDecimal quantity,
+                                @Size(max = 300) String note, UUID branchId) {}
 
-    public record AdjustResult(UUID variantId, int quantity) {}
+    public record AdjustResult(UUID variantId, BigDecimal quantity) {}
 
     /**
      * RESTOCK adds, DAMAGED removes, ADJUSTMENT applies a signed change, CORRECTION sets the counted quantity.
@@ -51,32 +53,35 @@ public class InventoryService {
         List<ProductVariant> locked = variants.lockAll(bid, List.of(r.variantId()));
         if (locked.isEmpty()) throw ApiException.notFound("Product variant not found");
         ProductVariant v = locked.get(0);
-        int q = r.quantity();
-        int change;
+        BigDecimal q = r.quantity();
+        BigDecimal change;
         MovementType type;
         switch (r.type()) {
             case RESTOCK -> {
-                if (q <= 0) throw ApiException.badRequest("Enter how many items you received");
+                if (q.signum() <= 0) throw ApiException.badRequest("Enter how many items you received");
+                units.requireValidQuantity(v, q);
                 change = q; type = MovementType.RESTOCK;
             }
             case DAMAGED -> {
-                if (q <= 0) throw ApiException.badRequest("Enter how many items are damaged");
-                change = -q; type = MovementType.DAMAGED;
+                if (q.signum() <= 0) throw ApiException.badRequest("Enter how many items are damaged");
+                units.requireValidQuantity(v, q);
+                change = q.negate(); type = MovementType.DAMAGED;
             }
             case ADJUSTMENT -> {
-                if (q == 0) throw ApiException.badRequest("Enter a number other than zero");
+                if (q.signum() == 0) throw ApiException.badRequest("Enter a number other than zero");
                 change = q; type = MovementType.ADJUSTMENT;
             }
             case CORRECTION -> {
-                if (q < 0) throw ApiException.badRequest("The counted quantity cannot be negative");
-                change = q - v.getQuantity(); type = MovementType.CORRECTION;
-                if (change == 0) throw ApiException.badRequest("Stock already matches that count");
+                if (q.signum() < 0) throw ApiException.badRequest("The counted quantity cannot be negative");
+                if (q.signum() > 0) units.requireValidQuantity(v, q);
+                change = q.subtract(stock.onHand(v, r.branchId())); type = MovementType.CORRECTION;
+                if (change.signum() == 0) throw ApiException.badRequest("Stock already matches that count");
             }
             default -> throw ApiException.badRequest("Unknown adjustment type");
         }
-        stock.apply(v, type, change, r.note(), null, Tenant.userId(), b.isAllowNegativeStock());
-        audit.record(bid, Tenant.userId(), "STOCK_" + type.name(), "variant", v.getId(), "change " + change);
-        return new AdjustResult(v.getId(), v.getQuantity());
+        BigDecimal balance = stock.apply(v, r.branchId(), type, change, r.note(), null, Tenant.userId(), b.isAllowNegativeStock()).getBalanceAfter();
+        audit.record(bid, Tenant.userId(), "STOCK_" + type.name(), "variant", v.getId(), "change " + change.stripTrailingZeros().toPlainString());
+        return new AdjustResult(v.getId(), balance);
     }
 
     @Transactional(readOnly = true)

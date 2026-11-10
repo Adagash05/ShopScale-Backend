@@ -91,7 +91,22 @@ public enum Permission {
     SUBSCRIPTION_VIEW("Subscription", "View the subscription"),
     SUBSCRIPTION_MANAGE("Subscription", "Change or cancel the subscription"),
     INVOICES_VIEW("Subscription", "View invoices"),
-    BILLING_MANAGE("Subscription", "Manage billing details");
+    BILLING_MANAGE("Subscription", "Manage billing details"),
+    // Added for the full V1 scope
+    STOCK_TRANSFER("Inventory", "Transfer stock between branches"),
+    STOCK_WASTAGE("Inventory", "Record wastage and spoilage"),
+    SALES_VOID("Sales and POS", "Void sales"),
+    QUOTES_MANAGE("Sales and POS", "Manage quotations and sales orders"),
+    TABLES_MANAGE("Restaurant", "Manage tables and table orders"),
+    PRODUCTION_MANAGE("Production", "Record production batches"),
+    CATERING_VIEW("Catering", "View catering events and quotes"),
+    CATERING_MANAGE("Catering", "Manage catering events, quotes and deposits"),
+    SHIFTS_MANAGE("Finance", "Open and close own cashier shift"),
+    SHIFTS_RECONCILE("Finance", "Review cashier reconciliation"),
+    EXPENSES_APPROVE("Finance", "Approve expenses"),
+    ACTIVITY_VIEW("Team", "View staff activity history"),
+    DATA_IMPORT("Business settings", "Import data from CSV"),
+    DATA_EXPORT("Business settings", "Export data to CSV");
 
     private final String module;
     private final String label;

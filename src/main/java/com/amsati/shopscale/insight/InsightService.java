@@ -72,8 +72,8 @@ public class InsightService {
 
         // ---- stock: selling rate over the last 30 days ----
         Instant windowStart = now.minus(Duration.ofDays(InsightRules.SALES_WINDOW_DAYS));
-        Map<UUID, Long> sold = new HashMap<>();
-        saleItems.unitsSoldByVariant(bid, SaleStatus.COMPLETED, windowStart).forEach(u -> sold.put(u.getVariantId(), u.getUnits() == null ? 0 : u.getUnits()));
+        Map<UUID, BigDecimal> sold = new HashMap<>();
+        saleItems.unitsSoldByVariant(bid, SaleStatus.COMPLETED, windowStart).forEach(u -> sold.put(u.getVariantId(), u.getUnits() == null ? BigDecimal.ZERO : u.getUnits()));
         List<ProductVariant> all = variants.activeWithProduct(bid, ProductStatus.ACTIVE);
         int w = InsightRules.SALES_WINDOW_DAYS;
 
@@ -83,15 +83,17 @@ public class InsightService {
         List<Item> weak = new ArrayList<>();
         int noCost = 0;
         for (ProductVariant v : all) {
-            long units = sold.getOrDefault(v.getId(), 0L);
+            BigDecimal unitsD = sold.getOrDefault(v.getId(), BigDecimal.ZERO);
+            double units = unitsD.doubleValue();
+            double qty = v.getQuantity().doubleValue();
             String path = "/products/" + v.getProduct().getId();
-            if (v.getQuantity() <= 0 && units >= 1) {
-                outOfStock.add(new Item(name(v), "Sold " + units + " in the last " + w + " days · buying " + Math.max(1, InsightRules.suggestedReorder(0, units, w)) + " would cover " + InsightRules.REORDER_COVER_DAYS + " days", path));
-            } else if (InsightRules.runningOutSoon(v.getQuantity(), units, w)) {
-                Double days = InsightRules.daysOfCover(v.getQuantity(), units, w);
-                soon.add(new Item(name(v), v.getQuantity() + " left · about " + Math.max(1, Math.round(days)) + " days at the recent pace · suggest buying " + InsightRules.suggestedReorder(v.getQuantity(), units, w), path));
+            if (v.getQuantity().signum() <= 0 && units >= 1) {
+                outOfStock.add(new Item(name(v), "Sold " + unitsD.stripTrailingZeros().toPlainString() + " in the last " + w + " days · buying " + Math.max(1, InsightRules.suggestedReorder(0, units, w)) + " would cover " + InsightRules.REORDER_COVER_DAYS + " days", path));
+            } else if (InsightRules.runningOutSoon(qty, units, w)) {
+                Double days = InsightRules.daysOfCover(qty, units, w);
+                soon.add(new Item(name(v), v.getQuantity().stripTrailingZeros().toPlainString() + " left · about " + Math.max(1, Math.round(days)) + " days at the recent pace · suggest buying " + InsightRules.suggestedReorder(qty, units, w), path));
             }
-            if (v.getQuantity() > 0 && units == 0 && v.getCreatedAt().isBefore(windowStart)) slow.add(v);
+            if (v.getQuantity().signum() > 0 && unitsD.signum() == 0 && v.getCreatedAt().isBefore(windowStart)) slow.add(v);
             if (InsightRules.weakMargin(v.getPrice(), v.getCost())) {
                 weak.add(new Item(name(v), "Margin " + InsightRules.marginPercent(v.getPrice(), v.getCost()) + "% · price " + naira(v.getPrice()) + ", cost " + naira(v.getCost()), path));
             }
@@ -103,9 +105,9 @@ public class InsightService {
             "At the recent pace they will not last.", "Stock covers " + InsightRules.STOCKOUT_HORIZON_DAYS + " days or fewer at the average of the last " + w + " days. Needs at least " + InsightRules.MIN_UNITS_FOR_RATE + " units sold to count. Suggested quantity covers " + InsightRules.REORDER_COVER_DAYS + " days.",
             "Receive stock", "/purchases/new", top(soon)));
         if (!slow.isEmpty()) {
-            slow.sort(Comparator.comparing((ProductVariant v) -> v.getCost().multiply(BigDecimal.valueOf(v.getQuantity()))).reversed());
-            BigDecimal tied = slow.stream().map(v -> v.getCost().multiply(BigDecimal.valueOf(v.getQuantity()))).reduce(BigDecimal.ZERO, BigDecimal::add);
-            List<Item> items = slow.stream().limit(5).map(v -> new Item(name(v), v.getQuantity() + " in stock" + (fin && v.getCost().signum() > 0 ? " · " + naira(v.getCost().multiply(BigDecimal.valueOf(v.getQuantity()))) + " at cost" : ""), "/products/" + v.getProduct().getId())).toList();
+            slow.sort(Comparator.comparing((ProductVariant v) -> v.getCost().multiply(v.getQuantity())).reversed());
+            BigDecimal tied = slow.stream().map(v -> v.getCost().multiply(v.getQuantity())).reduce(BigDecimal.ZERO, BigDecimal::add);
+            List<Item> items = slow.stream().limit(5).map(v -> new Item(name(v), v.getQuantity().stripTrailingZeros().toPlainString() + " in stock" + (fin && v.getCost().signum() > 0 ? " · " + naira(v.getCost().multiply(v.getQuantity())) + " at cost" : ""), "/products/" + v.getProduct().getId())).toList();
             out.add(new Insight("slow-moving", "INFO", slow.size() + (slow.size() == 1 ? " product has" : " products have") + " not sold in " + w + " days",
                 fin && tied.signum() > 0 ? "About " + naira(tied) + " of stock (at cost) is sitting on the shelf." : "These are taking up shelf space.",
                 "In stock, added more than " + w + " days ago, and no completed sale in the last " + w + " days.", "See products", "/products", items));

@@ -38,6 +38,7 @@ public class AuthService {
     private final JwtService jwt;
     private final PasswordEncoder encoder;
     private final AccessService access;
+    private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
 
     @Value("${app.jwt.refresh-ttl-days:30}")
     private long refreshTtlDays;
@@ -150,9 +151,22 @@ public class AuthService {
     private AuthResponse build(User u, Membership m, String accessToken, String refreshToken) {
         Business b = m == null ? null : businesses.findById(m.getBusinessId()).orElse(null);
         AccessService.RoleInfo info = m == null ? null : access.roleInfo(m);
+        List<String> features = List.of();
+        String planCode = null, subStatus = null;
+        if (b != null) {
+            try {
+                com.amsati.shopscale.subscription.SubscriptionState st = subscriptions.state(b.getId());
+                features = st.features().stream().sorted().toList();
+                planCode = st.planCode();
+                subStatus = st.status();
+            } catch (RuntimeException ignored) { /* no subscription yet: no plan features */ }
+        }
+        List<String> workflows = b == null ? List.of()
+            : com.amsati.shopscale.industry.Workflow.forType(b.getBusinessType()).stream().map(Enum::name).sorted().toList();
         return new AuthResponse(accessToken, refreshToken, accessToken == null ? 0 : jwt.getTtlSeconds(),
             new AuthResponse.UserDto(u.getId(), u.getEmail(), u.getFullName(), u.getPhone()),
             b == null ? null : BusinessDto.of(b), m == null ? null : m.getRole(),
-            info == null ? null : info.name(), info == null ? List.of() : List.copyOf(access.names(info.permissions())));
+            info == null ? null : info.name(), info == null ? List.of() : List.copyOf(access.names(info.permissions())),
+            features, workflows, planCode, subStatus);
     }
 }

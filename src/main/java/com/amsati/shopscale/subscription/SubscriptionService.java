@@ -65,6 +65,14 @@ public class SubscriptionService {
         }
     }
 
+    public void requireLocationCapacity(UUID businessId, long locationsAfter) {
+        SubscriptionState st = state(businessId);
+        if (locationsAfter > st.maxLocations()) {
+            throw ApiException.paymentRequired("Your " + st.planName() + " plan allows " + st.maxLocations()
+                + (st.maxLocations() == 1 ? " location" : " locations") + ". Upgrade to add another branch.");
+        }
+    }
+
     public void requireUserCapacity(UUID businessId, long usersAfter) {
         SubscriptionState st = state(businessId);
         if (usersAfter > st.maxUsers()) {

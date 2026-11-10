@@ -17,8 +17,9 @@ public class StockMovement {
     private UUID variantId;
     @Enumerated(EnumType.STRING)
     private MovementType type;
-    private int quantityChange;
-    private int balanceAfter;
+    private UUID branchId;
+    private java.math.BigDecimal quantityChange;
+    private java.math.BigDecimal balanceAfter;
     private String note;
     private String reference;
     private UUID createdBy;

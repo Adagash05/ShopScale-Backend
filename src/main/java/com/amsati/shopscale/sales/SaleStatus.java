@@ -1,3 +1,3 @@
 package com.amsati.shopscale.sales;
 
-public enum SaleStatus { COMPLETED, REFUNDED }
+public enum SaleStatus { COMPLETED, REFUNDED, VOIDED }

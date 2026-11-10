@@ -29,7 +29,7 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
     }
 
     /** Sales per local calendar day in the business timezone. */
-    @Query(value = "select to_char((s.created_at at time zone :tz), 'YYYY-MM-DD') as day, sum(s.total) as total, sum(s.cost_total) as cost "
+    @Query(value = "select to_char((s.created_at at time zone :tz), 'YYYY-MM-DD') as day, sum(s.total - s.refunded_amount) as total, sum(s.cost_total - s.refunded_cost) as cost "
         + "from sales s where s.business_id = :b and s.status = 'COMPLETED' and s.created_at >= :from and s.created_at < :to "
         + "group by 1 order by 1", nativeQuery = true)
     List<DayAggregate> daily(@Param("b") UUID b, @Param("tz") String tz, @Param("from") Instant from, @Param("to") Instant to);
@@ -66,7 +66,7 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
     Page<SaleSummary> searchMine(@Param("b") UUID b, @Param("user") UUID user, @Param("from") Instant from,
                                  @Param("to") Instant to, Pageable pageable);
 
-    @Query("select sum(s.total) as total, sum(s.costTotal) as cost, sum(s.discount) as discount, count(s) as saleCount "
+    @Query("select sum(s.total - s.refundedAmount) as total, sum(s.costTotal - s.refundedCost) as cost, sum(s.discount) as discount, count(s) as saleCount "
         + "from Sale s where s.businessId = :b and s.status = :status and s.createdAt >= :from and s.createdAt < :to")
     SalesAggregate aggregate(@Param("b") UUID b, @Param("status") SaleStatus status,
                              @Param("from") Instant from, @Param("to") Instant to);

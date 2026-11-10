@@ -22,8 +22,11 @@ public final class CatalogDtos {
         @Size(max = 60) String barcode,
         @NotNull @DecimalMin(value = "0", message = "Price cannot be negative") BigDecimal price,
         @DecimalMin(value = "0", message = "Cost cannot be negative") BigDecimal cost,
-        @Min(0) Integer quantity,
-        @Min(0) Integer lowStockThreshold) {}
+        @DecimalMin(value = "0", message = "Quantity cannot be negative") BigDecimal quantity,
+        @DecimalMin(value = "0", message = "Low-stock level cannot be negative") BigDecimal lowStockThreshold,
+        @Size(max = 20) String unit,
+        Boolean allowDecimal,
+        UUID branchId) {}
 
     public record ProductRequest(
         @NotBlank @Size(max = 200) String name,
@@ -35,14 +38,14 @@ public final class CatalogDtos {
     public record CategoryRequest(@NotBlank @Size(max = 80) String name) {}
 
     public record VariantDto(UUID id, String label, String sku, String barcode, BigDecimal price, BigDecimal cost,
-                             int quantity, int lowStockThreshold, boolean active) {}
+                             BigDecimal quantity, BigDecimal lowStockThreshold, boolean active, String unit, boolean allowDecimal) {}
 
     public record ProductDto(UUID id, String name, String description, String imageUrl, UUID categoryId,
-                             String categoryName, ProductStatus status, List<VariantDto> variants, int totalQuantity,
+                             String categoryName, ProductStatus status, List<VariantDto> variants, BigDecimal totalQuantity,
                              Instant createdAt) {}
 
     public record CategoryDto(UUID id, String name) {}
 
     public record PosItemDto(UUID variantId, UUID productId, String productName, String label, String sku,
-                             BigDecimal price, int quantity) {}
+                             BigDecimal price, BigDecimal quantity, String unit, boolean allowDecimal) {}
 }

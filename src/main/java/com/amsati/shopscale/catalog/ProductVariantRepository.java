@@ -22,7 +22,7 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     interface SlowItem {
         String getName();
         String getLabel();
-        Integer getQuantity();
+        java.math.BigDecimal getQuantity();
     }
 
     @Query("select sum(case when v.quantity <= 0 then 1 else 0 end) as outOfStock, "

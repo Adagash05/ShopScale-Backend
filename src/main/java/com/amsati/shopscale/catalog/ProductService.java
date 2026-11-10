@@ -10,6 +10,7 @@ import com.amsati.shopscale.inventory.MovementType;
 import com.amsati.shopscale.inventory.StockService;
 import com.amsati.shopscale.security.Tenant;
 import com.amsati.shopscale.subscription.SubscriptionService;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.function.Function;
@@ -29,6 +30,8 @@ public class ProductService {
     private final CategoryRepository categories;
     private final BusinessRepository businesses;
     private final StockService stock;
+    private final com.amsati.shopscale.unit.UnitService units;
+    private final com.amsati.shopscale.branch.BranchStockRepository branchStock;
     private final SubscriptionService subscriptions;
     private final AuditService audit;
 
@@ -90,7 +93,7 @@ public class ProductService {
             .collect(Collectors.toMap(Category::getId, Category::getName));
         return page.map(p -> {
             List<VariantDto> vs = byProduct.getOrDefault(p.getId(), List.of()).stream().map(ProductService::toDto).toList();
-            int total = vs.stream().mapToInt(VariantDto::quantity).sum();
+            BigDecimal total = vs.stream().map(VariantDto::quantity).reduce(BigDecimal.ZERO, BigDecimal::add);
             return new ProductDto(p.getId(), p.getName(), p.getDescription(), p.getImageUrl(), p.getCategoryId(),
                 p.getCategoryId() == null ? null : categoryNames.get(p.getCategoryId()), p.getStatus(), vs, total, p.getCreatedAt());
         });
@@ -98,15 +101,19 @@ public class ProductService {
 
     private static VariantDto toDto(ProductVariant v) {
         return new VariantDto(v.getId(), v.getLabel(), v.getSku(), v.getBarcode(), v.getPrice(), v.getCost(),
-            v.getQuantity(), v.getLowStockThreshold(), v.isActive());
+            v.getQuantity(), v.getLowStockThreshold(), v.isActive(), v.getUnit(), v.isAllowDecimal());
     }
 
     /** Flat list of sellable variants for the POS search box. */
     @Transactional(readOnly = true)
-    public List<PosItemDto> sellable(String q) {
-        return variants.sellable(Tenant.businessId(), ProductStatus.ACTIVE, like(q), PageRequest.of(0, 40)).stream()
+    public List<PosItemDto> sellable(String q, UUID branchId) {
+        UUID bid = Tenant.businessId();
+        UUID branch = stock.resolveBranch(bid, branchId);
+        java.util.Map<UUID, BigDecimal> here = new java.util.HashMap<>();
+        branchStock.forBranch(bid, branch).forEach(s -> here.put(s.getId().getVariantId(), s.getQuantity()));
+        return variants.sellable(bid, ProductStatus.ACTIVE, like(q), PageRequest.of(0, 40)).stream()
             .map(v -> new PosItemDto(v.getId(), v.getProduct().getId(), v.getProduct().getName(), v.getLabel(),
-                v.getSku(), v.getPrice(), v.getQuantity())).toList();
+                v.getSku(), v.getPrice(), here.getOrDefault(v.getId(), BigDecimal.ZERO), v.getUnit(), v.isAllowDecimal())).toList();
     }
 
     // ---------- writes ----------
@@ -161,12 +168,13 @@ public class ProductService {
                 v.setPrice(Money.scale(vr.price()));
                 v.setCost(Money.scale(vr.cost()));
                 if (vr.lowStockThreshold() != null) v.setLowStockThreshold(vr.lowStockThreshold());
+                applyUnit(v, vr);
                 v.setUpdatedAt(Instant.now());
             }
         }
         for (ProductVariant v : existing.values()) {
             if (kept.contains(v.getId())) continue;
-            if (v.getQuantity() > 0) {
+            if (v.getQuantity().signum() != 0) {
                 throw ApiException.badRequest("\"" + (v.getLabel() == null ? p.getName() : v.getLabel())
                     + "\" still has stock. Adjust its stock to zero before removing it.");
             }
@@ -209,11 +217,20 @@ public class ProductService {
         v.setBarcode(blankToNull(vr.barcode()));
         v.setPrice(Money.scale(vr.price()));
         v.setCost(Money.scale(vr.cost()));
-        v.setLowStockThreshold(vr.lowStockThreshold() == null ? 5 : vr.lowStockThreshold());
-        v.setQuantity(0);
+        v.setLowStockThreshold(vr.lowStockThreshold() == null ? BigDecimal.valueOf(5) : vr.lowStockThreshold());
+        v.setQuantity(BigDecimal.ZERO);
+        applyUnit(v, vr);
         variants.save(v);
-        int opening = vr.quantity() == null ? 0 : vr.quantity();
-        if (opening > 0) stock.apply(v, MovementType.OPENING, opening, "Opening stock", null, Tenant.userId(), allowNegative);
+        BigDecimal opening = vr.quantity() == null ? BigDecimal.ZERO : vr.quantity();
+        if (opening.signum() > 0) {
+            units.requireValidQuantity(v, opening);
+            stock.apply(v, vr.branchId(), MovementType.OPENING, opening, "Opening stock", null, Tenant.userId(), allowNegative);
+        }
+    }
+
+    private void applyUnit(ProductVariant v, VariantRequest vr) {
+        if (vr.unit() != null && !vr.unit().isBlank()) v.setUnit(units.normalizeUnit(vr.unit()));
+        if (vr.allowDecimal() != null) v.setAllowDecimal(vr.allowDecimal());
     }
 
     private void validateCategory(UUID bid, UUID categoryId) {

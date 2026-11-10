@@ -15,9 +15,13 @@ public class Purchase {
     @Id @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
     private UUID businessId;
+    private UUID branchId;
+    private UUID purchaseOrderId;
     private long purchaseNumber;
     private UUID supplierId;
     private String reference;
+    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
+    private com.amsati.shopscale.common.PaymentMethod paymentMethod;
     private BigDecimal total;
     private BigDecimal amountPaid;
     private BigDecimal amountOwed;

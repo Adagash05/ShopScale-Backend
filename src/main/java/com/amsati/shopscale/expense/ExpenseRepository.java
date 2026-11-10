@@ -16,7 +16,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
         BigDecimal getTotal();
     }
 
-    @Query("select e.expenseDate as day, sum(e.amount) as total from Expense e where e.businessId = :b "
+    @Query("select e.expenseDate as day, sum(e.amount) as total from Expense e where e.businessId = :b and e.status = 'APPROVED' "
         + "and e.expenseDate >= :from and e.expenseDate <= :to group by e.expenseDate order by e.expenseDate")
     java.util.List<DayTotal> daily(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
@@ -26,6 +26,6 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
         + "order by e.expenseDate desc, e.createdAt desc")
     Page<Expense> search(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to, Pageable pageable);
 
-    @Query("select sum(e.amount) from Expense e where e.businessId = :b and e.expenseDate >= :from and e.expenseDate <= :to")
+    @Query("select sum(e.amount) from Expense e where e.businessId = :b and e.status = 'APPROVED' and e.expenseDate >= :from and e.expenseDate <= :to")
     BigDecimal sumBetween(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to);
 }

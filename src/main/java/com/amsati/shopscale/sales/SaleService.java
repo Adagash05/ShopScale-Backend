@@ -51,9 +51,13 @@ public class SaleService {
     private final SubscriptionService subscriptions;
     private final AuditService audit;
     private final AccessService access;
+    private final com.amsati.shopscale.finance.FinanceService finance;
+    private final com.amsati.shopscale.unit.UnitService units;
 
     // ---------- request / response ----------
-    public record ItemRequest(@NotNull UUID variantId, @Min(value = 1, message = "Quantity must be at least 1") int quantity) {}
+    public record ItemRequest(@NotNull UUID variantId,
+                              @NotNull @DecimalMin(value = "0.001", message = "Quantity must be greater than zero") BigDecimal quantity,
+                              @Size(max = 20) String unit) {}
 
     public record PayRequest(@NotNull PaymentMethod method,
                              @NotNull @DecimalMin(value = "0.01", message = "Enter an amount above zero") BigDecimal amount) {}
@@ -63,17 +67,18 @@ public class SaleService {
                               UUID customerId,
                               @Valid List<PayRequest> payments,
                               @Size(max = 300) String note,
-                              @Size(max = 64) String clientRequestId) {}
+                              @Size(max = 64) String clientRequestId,
+                              UUID branchId) {}
 
-    public record ItemDto(UUID variantId, String productName, String variantLabel, int quantity,
-                          BigDecimal unitPrice, BigDecimal lineTotal) {}
+    public record ItemDto(UUID id, UUID variantId, String productName, String variantLabel, BigDecimal quantity,
+                          String unit, BigDecimal unitPrice, BigDecimal lineTotal, BigDecimal quantityRefunded) {}
 
     public record PaymentDto(PaymentMethod method, BigDecimal amount) {}
 
     public record SaleDto(UUID id, long saleNumber, SaleStatus status, UUID customerId, String customerName,
                           BigDecimal subtotal, BigDecimal discount, BigDecimal total, BigDecimal amountPaid,
                           BigDecimal amountOwed, String note, Instant createdAt, Instant refundedAt,
-                          List<ItemDto> items, List<PaymentDto> payments) {}
+                          List<ItemDto> items, List<PaymentDto> payments, UUID branchId, BigDecimal refundedAmount, String channel, String voidReason) {}
 
     // ---------- create ----------
     /**
@@ -82,6 +87,12 @@ public class SaleService {
      */
     @Transactional
     public SaleDto create(SaleRequest req) {
+        return createInternal(req, "POS", null, null, false);
+    }
+
+    /** Shared by the POS and by quote/order conversion. {@code prepaid} is money already received (a deposit) and is not posted to the ledger again. */
+    @Transactional
+    public SaleDto createInternal(SaleRequest req, String channel, BigDecimal prepaid, PaymentMethod prepaidMethod, boolean trustedDiscount) {
         UUID bid = Tenant.businessId();
         UUID userId = Tenant.userId();
 
@@ -96,39 +107,50 @@ public class SaleService {
         Business business = businesses.findByIdForUpdate(bid).orElseThrow(() -> ApiException.notFound("Business not found"));
 
         // Merge duplicate lines for the same variant.
-        Map<UUID, Integer> wanted = new LinkedHashMap<>();
-        for (ItemRequest i : req.items()) wanted.merge(i.variantId(), i.quantity(), Integer::sum);
-
-        List<ProductVariant> locked = variants.lockAll(bid, wanted.keySet());
-        if (locked.size() != wanted.size()) throw ApiException.badRequest("One of the items is no longer available");
+        UUID branchId = stock.resolveBranch(bid, req.branchId());
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (ItemRequest i : req.items()) ids.add(i.variantId());
+        List<ProductVariant> locked = variants.lockAll(bid, ids);
+        if (locked.size() != ids.size()) throw ApiException.badRequest("One of the items is no longer available");
         Map<UUID, ProductVariant> byId = locked.stream().collect(Collectors.toMap(ProductVariant::getId, v -> v));
+        // Quantities are converted to each product's base unit; duplicate lines for one variant are merged.
+        Map<UUID, BigDecimal> wanted = new LinkedHashMap<>();
+        for (ItemRequest i : req.items()) {
+            ProductVariant v = byId.get(i.variantId());
+            units.requireValidQuantity(v, i.quantity());
+            BigDecimal base = units.toBase(v, i.unit(), i.quantity());
+            units.requireValidQuantity(v, base);
+            wanted.merge(i.variantId(), base, BigDecimal::add);
+        }
         Map<UUID, Product> productById = products.findAllById(
             locked.stream().map(v -> v.getProduct().getId()).collect(Collectors.toSet()))
             .stream().collect(Collectors.toMap(Product::getId, p -> p));
 
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal costTotal = BigDecimal.ZERO;
-        for (Map.Entry<UUID, Integer> e : wanted.entrySet()) {
+        for (Map.Entry<UUID, BigDecimal> e : wanted.entrySet()) {
             ProductVariant v = byId.get(e.getKey());
             Product p = productById.get(v.getProduct().getId());
             String display = displayName(p, v);
             if (!v.isActive() || p.getStatus() != ProductStatus.ACTIVE) throw ApiException.badRequest(display + " is no longer for sale");
-            if (!business.isAllowNegativeStock() && v.getQuantity() < e.getValue()) {
-                throw ApiException.conflict("Not enough stock for " + display + ". Only " + v.getQuantity() + " left.");
+            BigDecimal here = stock.onHand(v, branchId);
+            if (!business.isAllowNegativeStock() && here.compareTo(e.getValue()) < 0) {
+                throw ApiException.conflict("Not enough stock for " + display + ". Only " + here.stripTrailingZeros().toPlainString() + " left at this branch.");
             }
-            subtotal = subtotal.add(v.getPrice().multiply(BigDecimal.valueOf(e.getValue())));
-            costTotal = costTotal.add(v.getCost().multiply(BigDecimal.valueOf(e.getValue())));
+            subtotal = subtotal.add(v.getPrice().multiply(e.getValue()));
+            costTotal = costTotal.add(v.getCost().multiply(e.getValue()));
         }
         subtotal = Money.scale(subtotal);
         costTotal = Money.scale(costTotal);
 
         BigDecimal discount = Money.scale(req.discount());
-        if (discount.signum() > 0) access.require(Permission.SALES_DISCOUNT);
+        if (discount.signum() > 0 && !trustedDiscount) access.require(Permission.SALES_DISCOUNT);
         if (discount.compareTo(subtotal) > 0) throw ApiException.badRequest("The discount is more than the total of the items");
         BigDecimal total = subtotal.subtract(discount);
 
         List<PayRequest> pays = req.payments() == null ? List.of() : req.payments();
-        BigDecimal paid = Money.scale(pays.stream().map(PayRequest::amount).reduce(BigDecimal.ZERO, BigDecimal::add));
+        BigDecimal prepaidAmt = prepaid == null ? BigDecimal.ZERO : Money.scale(prepaid);
+        BigDecimal paid = Money.scale(pays.stream().map(PayRequest::amount).reduce(BigDecimal.ZERO, BigDecimal::add)).add(prepaidAmt);
         if (paid.compareTo(total) > 0) throw ApiException.badRequest("Payments add up to more than the sale total");
         BigDecimal owed = total.subtract(paid);
 
@@ -146,6 +168,8 @@ public class SaleService {
 
         Sale sale = new Sale();
         sale.setBusinessId(bid);
+        sale.setBranchId(branchId);
+        sale.setChannel(channel);
         sale.setSaleNumber(business.getSaleCounter());
         sale.setCustomerId(customer == null ? null : customer.getId());
         sale.setStatus(SaleStatus.COMPLETED);
@@ -161,7 +185,7 @@ public class SaleService {
         sales.save(sale);
 
         String reference = "SALE-" + sale.getSaleNumber();
-        for (Map.Entry<UUID, Integer> e : wanted.entrySet()) {
+        for (Map.Entry<UUID, BigDecimal> e : wanted.entrySet()) {
             ProductVariant v = byId.get(e.getKey());
             Product p = productById.get(v.getProduct().getId());
             SaleItem item = new SaleItem();
@@ -171,11 +195,12 @@ public class SaleService {
             item.setProductName(p.getName());
             item.setVariantLabel(v.getLabel());
             item.setQuantity(e.getValue());
+            item.setUnit(v.getUnit());
             item.setUnitPrice(v.getPrice());
             item.setUnitCost(v.getCost());
-            item.setLineTotal(Money.scale(v.getPrice().multiply(BigDecimal.valueOf(e.getValue()))));
+            item.setLineTotal(Money.scale(v.getPrice().multiply(e.getValue())));
             saleItems.save(item);
-            stock.apply(v, MovementType.SALE, -e.getValue(), null, reference, userId, business.isAllowNegativeStock());
+            stock.apply(v, branchId, MovementType.SALE, e.getValue().negate(), null, reference, userId, business.isAllowNegativeStock());
         }
         for (PayRequest pr : pays) {
             SalePayment sp = new SalePayment();
@@ -184,6 +209,15 @@ public class SaleService {
             sp.setMethod(pr.method());
             sp.setAmount(Money.scale(pr.amount()));
             salePayments.save(sp);
+            finance.record(bid, pr.method(), true, sp.getAmount(), "SALE", "SALE", sale.getId(), "Sale #" + sale.getSaleNumber(), userId, branchId);
+        }
+        if (prepaidAmt.signum() > 0) {
+            SalePayment dp = new SalePayment();
+            dp.setSale(sale);
+            dp.setBusinessId(bid);
+            dp.setMethod(prepaidMethod == null ? PaymentMethod.CASH : prepaidMethod);
+            dp.setAmount(prepaidAmt);
+            salePayments.save(dp);
         }
         if (customer != null && owed.signum() > 0) {
             customer.setBalance(customer.getBalance().add(owed));
@@ -193,37 +227,6 @@ public class SaleService {
         return toDto(sale);
     }
 
-    // ---------- refund ----------
-    /** Full refund: returns stock, removes the sale from sales/profit figures, and cancels any unpaid balance. */
-    @Transactional
-    public SaleDto refund(UUID saleId) {
-        UUID bid = Tenant.businessId();
-        UUID userId = Tenant.userId();
-        Business business = businesses.findByIdForUpdate(bid).orElseThrow(() -> ApiException.notFound("Business not found"));
-        Sale sale = sales.findForUpdate(saleId, bid).orElseThrow(() -> ApiException.notFound("Sale not found"));
-        if (sale.getStatus() == SaleStatus.REFUNDED) throw ApiException.conflict("This sale has already been refunded");
-
-        List<SaleItem> items = saleItems.findBySaleId(saleId);
-        Map<UUID, ProductVariant> byId = variants.lockAll(bid, items.stream().map(SaleItem::getVariantId).collect(Collectors.toSet()))
-            .stream().collect(Collectors.toMap(ProductVariant::getId, v -> v));
-        String reference = "REFUND-" + sale.getSaleNumber();
-        for (SaleItem i : items) {
-            ProductVariant v = byId.get(i.getVariantId());
-            if (v != null) stock.apply(v, MovementType.REFUND, i.getQuantity(), "Sale refunded", reference, userId, true);
-        }
-        if (sale.getCustomerId() != null && sale.getAmountOwed().signum() > 0) {
-            customers.findForUpdate(sale.getCustomerId(), bid).ifPresent(c -> {
-                c.setBalance(c.getBalance().subtract(sale.getAmountOwed()));
-                c.setUpdatedAt(Instant.now());
-            });
-        }
-        sale.setStatus(SaleStatus.REFUNDED);
-        sale.setRefundedAt(Instant.now());
-        audit.record(bid, userId, "SALE_REFUNDED", "sale", saleId, reference);
-        return toDto(sale);
-    }
-
-    // ---------- reads ----------
     @Transactional(readOnly = true)
     public SaleDto get(UUID id) {
         Sale s = sales.findByIdAndBusinessId(id, Tenant.businessId()).orElseThrow(() -> ApiException.notFound("Sale not found"));
@@ -246,16 +249,19 @@ public class SaleService {
         return sales.search(bid, r.start(b.zone()), r.endExclusive(b.zone()), pr);
     }
 
+    /** Public view used by other sales services (returns). */
+    public SaleDto view(Sale s) { return toDto(s); }
+
     private SaleDto toDto(Sale s) {
         String customerName = s.getCustomerId() == null ? null
             : customers.findByIdAndBusinessId(s.getCustomerId(), s.getBusinessId()).map(Customer::getName).orElse(null);
         List<ItemDto> items = saleItems.findBySaleId(s.getId()).stream()
-            .map(i -> new ItemDto(i.getVariantId(), i.getProductName(), i.getVariantLabel(), i.getQuantity(), i.getUnitPrice(), i.getLineTotal())).toList();
+            .map(i -> new ItemDto(i.getId(), i.getVariantId(), i.getProductName(), i.getVariantLabel(), i.getQuantity(), i.getUnit(), i.getUnitPrice(), i.getLineTotal(), i.getQuantityRefunded())).toList();
         List<PaymentDto> pays = salePayments.findBySaleId(s.getId()).stream()
             .map(p -> new PaymentDto(p.getMethod(), p.getAmount())).toList();
         return new SaleDto(s.getId(), s.getSaleNumber(), s.getStatus(), s.getCustomerId(), customerName, s.getSubtotal(),
             s.getDiscount(), s.getTotal(), s.getAmountPaid(), s.getAmountOwed(), s.getNote(), s.getCreatedAt(),
-            s.getRefundedAt(), items, pays);
+            s.getRefundedAt(), items, pays, s.getBranchId(), s.getRefundedAmount(), s.getChannel(), s.getVoidReason());
     }
 
     private static String displayName(Product p, ProductVariant v) {

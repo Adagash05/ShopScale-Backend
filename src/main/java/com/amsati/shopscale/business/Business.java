@@ -1,6 +1,7 @@
 package com.amsati.shopscale.business;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.UUID;
@@ -28,6 +29,10 @@ public class Business {
     private boolean allowNegativeStock;
     private long saleCounter;
     private long purchaseCounter;
+    private long transferCounter;
+    private long poCounter;
+    private long documentCounter;
+    private BigDecimal expenseApprovalThreshold;
     private String status = "ACTIVE";
     private Instant createdAt = Instant.now();
 

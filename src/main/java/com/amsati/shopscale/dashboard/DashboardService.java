@@ -55,9 +55,9 @@ public class DashboardService {
     private final AccessService access;
 
     public record MethodTotal(String method, BigDecimal amount) {}
-    public record TopProduct(String name, long quantity, BigDecimal revenue) {}
+    public record TopProduct(String name, BigDecimal quantity, BigDecimal revenue) {}
     public record CategoryTotal(String name, BigDecimal revenue) {}
-    public record SlowItem(String name, int quantity) {}
+    public record SlowItem(String name, BigDecimal quantity) {}
     public record DayPoint(LocalDate date, BigDecimal sales, BigDecimal expenses, BigDecimal grossProfit) {}
     public record StockHealth(long outOfStock, long low, long healthy) {}
     public record Headline(BigDecimal today, BigDecimal last7Days, BigDecimal thisMonth) {}
@@ -112,11 +112,11 @@ public class DashboardService {
         }
 
         List<TopProduct> top = saleItems.topProducts(bid, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 5)).stream()
-            .map(t -> new TopProduct(t.getName(), t.getQuantity() == null ? 0 : t.getQuantity(), Money.scale(t.getRevenue()))).toList();
+            .map(t -> new TopProduct(t.getName(), t.getQuantity() == null ? BigDecimal.ZERO : t.getQuantity(), Money.scale(t.getRevenue()))).toList();
         List<CategoryTotal> byCategory = saleItems.byCategory(bid, SaleStatus.COMPLETED, start, end).stream()
             .map(c -> new CategoryTotal(c.getName() == null ? "No category" : c.getName(), Money.scale(c.getRevenue()))).toList();
         List<SlowItem> slow = variants.slowMoving(bid, ProductStatus.ACTIVE, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 5)).stream()
-            .map(s -> new SlowItem(s.getLabel() == null ? s.getName() : s.getName() + " (" + s.getLabel() + ")", s.getQuantity() == null ? 0 : s.getQuantity())).toList();
+            .map(s -> new SlowItem(s.getLabel() == null ? s.getName() : s.getName() + " (" + s.getLabel() + ")", s.getQuantity() == null ? BigDecimal.ZERO : s.getQuantity())).toList();
         ProductVariantRepositoryHealth health = ProductVariantRepositoryHealth.of(variants.stockHealth(bid, ProductStatus.ACTIVE));
         Headline headline = new Headline(salesBetween(bid, today, today, zone), salesBetween(bid, today.minusDays(6), today, zone),
             salesBetween(bid, today.withDayOfMonth(1), today, zone));

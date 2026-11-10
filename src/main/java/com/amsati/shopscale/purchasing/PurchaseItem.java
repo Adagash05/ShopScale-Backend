@@ -18,7 +18,8 @@ public class PurchaseItem {
     private UUID variantId;
     private String productName;
     private String variantLabel;
-    private int quantity;
+    private java.math.BigDecimal quantity;
+    private String unit;
     private BigDecimal unitCost;
     private BigDecimal lineTotal;
 }

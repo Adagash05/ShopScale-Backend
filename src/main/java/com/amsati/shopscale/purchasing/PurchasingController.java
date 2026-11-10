@@ -56,4 +56,30 @@ public class PurchasingController {
     @GetMapping("/api/purchases/{id}")
     @PreAuthorize("@access.has('PURCHASES_VIEW')")
     public PurchasingService.PurchaseDto purchase(@PathVariable UUID id) { return service.getPurchase(id); }
+
+    // ---------- purchase orders ----------
+    private final PurchaseOrderService orders;
+
+    @GetMapping("/api/purchase-orders")
+    @PreAuthorize("@access.has('PURCHASES_VIEW')")
+    public Page<PurchaseOrderService.OrderDto> orders(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "30") int size) {
+        return orders.list(page, size);
+    }
+
+    @GetMapping("/api/purchase-orders/{id}")
+    @PreAuthorize("@access.has('PURCHASES_VIEW')")
+    public PurchaseOrderService.OrderDto order(@PathVariable UUID id) { return orders.get(id); }
+
+    @PostMapping("/api/purchase-orders")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@access.has('PURCHASES_CREATE')")
+    public PurchaseOrderService.OrderDto createOrder(@Valid @RequestBody PurchaseOrderService.OrderRequest r) { return orders.create(r); }
+
+    @PostMapping("/api/purchase-orders/{id}/receive")
+    @PreAuthorize("@access.has('PURCHASES_CREATE')")
+    public PurchaseOrderService.OrderDto receiveOrder(@PathVariable UUID id, @Valid @RequestBody PurchaseOrderService.ReceiveRequest r) { return orders.receive(id, r); }
+
+    @PostMapping("/api/purchase-orders/{id}/cancel")
+    @PreAuthorize("@access.has('PURCHASES_CREATE')")
+    public PurchaseOrderService.OrderDto cancelOrder(@PathVariable UUID id) { return orders.cancelOrClose(id); }
 }

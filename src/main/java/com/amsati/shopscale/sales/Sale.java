@@ -15,6 +15,12 @@ public class Sale {
     @Id @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
     private UUID businessId;
+    private UUID branchId;
+    private String channel = "POS";
+    private java.math.BigDecimal refundedAmount = java.math.BigDecimal.ZERO;
+    private java.math.BigDecimal refundedCost = java.math.BigDecimal.ZERO;
+    private String voidReason;
+    private UUID voidedBy;
     private long saleNumber;
     private UUID customerId;
     @Enumerated(EnumType.STRING)

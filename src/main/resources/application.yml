@@ -35,7 +35,7 @@ app:
   mail:
     from: ${MAIL_FROM:}
   business:
-    enabled-types: RETAIL
+    enabled-types: RETAIL,WHOLESALE,RESTAURANT,CATERING,SMALL_CHOPS,PRODUCTION,LIVESTOCK
   subscription:
     trial-plan: BUSINESS
     trial-days: 14

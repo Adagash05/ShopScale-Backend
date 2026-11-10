@@ -30,22 +30,22 @@ public final class InsightRules {
     private InsightRules() {}
 
     /** Days the current stock will last at the recent rate, or null if there is no reliable rate. */
-    public static Double daysOfCover(int stock, long unitsSold, int windowDays) {
+    public static Double daysOfCover(double stock, double unitsSold, int windowDays) {
         if (unitsSold < MIN_UNITS_FOR_RATE || windowDays <= 0) return null;
-        double perDay = (double) unitsSold / windowDays;
+        double perDay = unitsSold / windowDays;
         return Math.max(stock, 0) / perDay;
     }
 
-    public static boolean runningOutSoon(int stock, long unitsSold, int windowDays) {
+    public static boolean runningOutSoon(double stock, double unitsSold, int windowDays) {
         Double days = daysOfCover(stock, unitsSold, windowDays);
         return days != null && stock > 0 && days <= STOCKOUT_HORIZON_DAYS;
     }
 
     /** Units to buy so stock covers REORDER_COVER_DAYS of selling. */
-    public static int suggestedReorder(int stock, long unitsSold, int windowDays) {
+    public static int suggestedReorder(double stock, double unitsSold, int windowDays) {
         if (unitsSold <= 0 || windowDays <= 0) return 0;
-        double perDay = (double) unitsSold / windowDays;
-        return Math.max(0, (int) Math.ceil(perDay * REORDER_COVER_DAYS) - Math.max(stock, 0));
+        double perDay = unitsSold / windowDays;
+        return (int) Math.max(0, (int) Math.ceil(perDay * REORDER_COVER_DAYS) - Math.max(stock, 0));
     }
 
     /** Gross margin as a percentage of price, or null if price or cost is missing. */

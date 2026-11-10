@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CustomerService {
     private final CustomerRepository customers;
     private final CustomerPaymentRepository payments;
+    private final com.amsati.shopscale.finance.FinanceService finance;
     private final SaleRepository sales;
     private final SubscriptionService subscriptions;
     private final AuditService audit;
@@ -118,6 +119,7 @@ public class CustomerService {
         p.setNote(r.note());
         p.setCreatedBy(Tenant.userId());
         payments.save(p);
+        finance.record(bid, r.method(), true, amount, "CUSTOMER_PAYMENT", "CUSTOMER", id, "Payment from " + c.getName(), Tenant.userId(), null);
         audit.record(bid, Tenant.userId(), "CUSTOMER_PAYMENT", "customer", id, amount.toPlainString());
         return detail(id);
     }

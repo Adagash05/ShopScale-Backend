@@ -33,6 +33,8 @@ public class BusinessService {
     private final SubscriptionService subscriptions;
     private final AuthService auth;
     private final AuditService audit;
+    private final com.amsati.shopscale.branch.BranchRepository branches;
+    private final com.amsati.shopscale.finance.FinanceService finance;
 
     @Value("${app.business.enabled-types:RETAIL}")
     private String enabledTypes;
@@ -85,7 +87,7 @@ public class BusinessService {
         UUID uid = Tenant.userId();
         if (memberships.existsByUserIdAndActiveTrue(uid)) throw ApiException.conflict("You already have a business on this account");
         if (!enabled().contains(r.businessType())) {
-            throw ApiException.badRequest("Tools for this business type are coming soon. Choose Retail for now.");
+            throw ApiException.badRequest("This business type is not available for sign-up.");
         }
         SlugCheck check = checkSlug(r.slug());
         if (!check.available()) throw ApiException.badRequest(check.reason());
@@ -102,6 +104,16 @@ public class BusinessService {
         b.setCurrency(r.currency() == null ? "NGN" : r.currency().toUpperCase());
         b.setTimezone(validZone(r.timezone()));
         businesses.save(b);
+
+        com.amsati.shopscale.branch.Branch main = new com.amsati.shopscale.branch.Branch();
+        main.setBusinessId(b.getId());
+        main.setName("Main branch");
+        main.setAddress(r.address());
+        main.setPhone(r.phone());
+        main.setMain(true);
+        branches.save(main);
+        finance.accountFor(b.getId(), com.amsati.shopscale.common.PaymentMethod.CASH);
+        finance.accountFor(b.getId(), com.amsati.shopscale.common.PaymentMethod.TRANSFER);
 
         Membership m = new Membership();
         m.setUserId(uid);

@@ -13,11 +13,16 @@ public final class CostMath {
      * because overselling was allowed) the new unit cost simply applies.
      */
     public static BigDecimal weightedAverage(int onHand, BigDecimal currentCost, int received, BigDecimal unitCost) {
-        if (received <= 0) throw new IllegalArgumentException("received must be positive");
+        return weightedAverage(BigDecimal.valueOf(onHand), currentCost, BigDecimal.valueOf(received), unitCost);
+    }
+
+    /** Same maths for decimal quantities (kilograms, litres...). */
+    public static BigDecimal weightedAverage(BigDecimal onHand, BigDecimal currentCost, BigDecimal received, BigDecimal unitCost) {
+        if (received.signum() <= 0) throw new IllegalArgumentException("received must be positive");
         BigDecimal cost = unitCost.setScale(2, RoundingMode.HALF_UP);
-        if (onHand <= 0) return cost;
-        BigDecimal have = currentCost.multiply(BigDecimal.valueOf(onHand));
-        BigDecimal add = unitCost.multiply(BigDecimal.valueOf(received));
-        return have.add(add).divide(BigDecimal.valueOf((long) onHand + received), 2, RoundingMode.HALF_UP);
+        if (onHand.signum() <= 0) return cost;
+        BigDecimal have = currentCost.multiply(onHand);
+        BigDecimal add = unitCost.multiply(received);
+        return have.add(add).divide(onHand.add(received), 2, RoundingMode.HALF_UP);
     }
 }

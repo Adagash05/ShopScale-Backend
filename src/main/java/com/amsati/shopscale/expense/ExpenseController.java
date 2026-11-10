@@ -34,4 +34,26 @@ public class ExpenseController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("@access.has('EXPENSES_EDIT')")
     public void delete(@PathVariable UUID id) { service.delete(id); }
+
+    public record LimitRequest(java.math.BigDecimal limit) {}
+
+    @PostMapping("/{id}/approve")
+    @PreAuthorize("@access.has('EXPENSES_APPROVE')")
+    public ExpenseService.ExpenseDto approve(@PathVariable UUID id, @RequestBody(required = false) ExpenseService.DecisionRequest r) {
+        return service.decide(id, true, r == null ? null : r.note());
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("@access.has('EXPENSES_APPROVE')")
+    public ExpenseService.ExpenseDto reject(@PathVariable UUID id, @RequestBody(required = false) ExpenseService.DecisionRequest r) {
+        return service.decide(id, false, r == null ? null : r.note());
+    }
+
+    @GetMapping("/approval-limit")
+    @PreAuthorize("@access.has('EXPENSES_VIEW')")
+    public LimitRequest limit() { return new LimitRequest(service.approvalLimit()); }
+
+    @PutMapping("/approval-limit")
+    @PreAuthorize("@access.has('SETTINGS_EDIT')")
+    public LimitRequest setLimit(@RequestBody LimitRequest r) { return new LimitRequest(service.setApprovalLimit(r.limit())); }
 }

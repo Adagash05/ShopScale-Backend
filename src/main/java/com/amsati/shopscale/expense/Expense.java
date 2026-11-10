@@ -24,5 +24,10 @@ public class Expense {
     @Enumerated(EnumType.STRING)
     private PaymentMethod paymentMethod;
     private UUID createdBy;
+    private UUID branchId;
+    private String status = "APPROVED";
+    private UUID decidedBy;
+    private Instant decidedAt;
+    private String decisionNote;
     private Instant createdAt = Instant.now();
 }

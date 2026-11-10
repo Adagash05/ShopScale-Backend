@@ -13,6 +13,7 @@ public record SubscriptionState(
         Instant periodEnd,
         boolean writable,
         int maxUsers,
+        int maxLocations,
         Integer maxItems,       // null = unlimited
         Set<String> features) {
 
@@ -38,7 +39,7 @@ public record SubscriptionState(
             status = "EXPIRED"; writable = false;
         }
         return new SubscriptionState(p.getCode(), p.getName(), status, s.getBillingCycle(),
-            s.getCurrentPeriodEnd(), writable, p.getMaxUsers(), p.getMaxItems(), Set.copyOf(p.getFeatures()));
+            s.getCurrentPeriodEnd(), writable, p.getMaxUsers(), p.getMaxLocations(), p.getMaxItems(), Set.copyOf(p.getFeatures()));
     }
 
     public boolean hasFeature(String f) { return features.contains(f); }

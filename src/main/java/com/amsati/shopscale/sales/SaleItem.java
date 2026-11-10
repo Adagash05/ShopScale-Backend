@@ -20,7 +20,9 @@ public class SaleItem {
     private UUID variantId;
     private String productName;
     private String variantLabel;
-    private int quantity;
+    private java.math.BigDecimal quantity;
+    private String unit;
+    private java.math.BigDecimal quantityRefunded = java.math.BigDecimal.ZERO;
     private BigDecimal unitPrice;
     private BigDecimal unitCost;
     private BigDecimal lineTotal;

@@ -58,6 +58,8 @@ public class PurchasingService {
     private final SubscriptionService subscriptions;
     private final AccessService access;
     private final AuditService audit;
+    private final com.amsati.shopscale.unit.UnitService units;
+    private final com.amsati.shopscale.finance.FinanceService finance;
 
     // ---------- requests / responses ----------
     public record SupplierRequest(@NotBlank @Size(max = 150) String name, @Size(max = 40) String phone,
@@ -66,17 +68,19 @@ public class PurchasingService {
     public record SupplierPaymentRequest(@NotNull @DecimalMin(value = "0.01", message = "Enter an amount above zero") BigDecimal amount,
                                          @NotNull PaymentMethod method, @Size(max = 300) String note) {}
 
-    public record ItemRequest(@NotNull UUID variantId, @Min(value = 1, message = "Quantity must be at least 1") int quantity,
+    public record ItemRequest(@NotNull UUID variantId,
+                              @NotNull @DecimalMin(value = "0.001", message = "Quantity must be greater than zero") BigDecimal quantity,
                               @NotNull @DecimalMin(value = "0", message = "Cost cannot be negative") BigDecimal unitCost) {}
 
     public record PurchaseRequest(@NotEmpty(message = "Add at least one product") @Valid List<ItemRequest> items, UUID supplierId,
                                   @DecimalMin(value = "0", message = "Amount paid cannot be negative") BigDecimal amountPaid,
-                                  @Size(max = 60) String reference, @Size(max = 300) String note, @Size(max = 64) String clientRequestId) {}
+                                  @Size(max = 60) String reference, @Size(max = 300) String note, @Size(max = 64) String clientRequestId,
+                                  UUID branchId, PaymentMethod paymentMethod) {}
 
     public record SupplierDto(UUID id, String name, String phone, String email, String address, String notes, BigDecimal balance) {}
     public record SupplierPaymentDto(UUID id, BigDecimal amount, PaymentMethod method, String note, Instant createdAt) {}
     public record SupplierDetail(SupplierDto supplier, List<SupplierPaymentDto> payments, List<PurchaseSummary> purchases) {}
-    public record PurchaseItemDto(UUID variantId, String productName, String variantLabel, int quantity, BigDecimal unitCost, BigDecimal lineTotal) {}
+    public record PurchaseItemDto(UUID variantId, String productName, String variantLabel, BigDecimal quantity, BigDecimal unitCost, BigDecimal lineTotal) {}
     public record PurchaseDto(UUID id, long purchaseNumber, UUID supplierId, String supplierName, String reference, BigDecimal total,
                               BigDecimal amountPaid, BigDecimal amountOwed, String note, Instant createdAt, List<PurchaseItemDto> items) {}
 
@@ -154,6 +158,7 @@ public class PurchasingService {
         }
         s.setBalance(s.getBalance().subtract(amount));
         s.setUpdatedAt(Instant.now());
+        finance.record(bid, r.method(), false, amount, "SUPPLIER_PAYMENT", "SUPPLIER", id, "Payment to " + s.getName(), Tenant.userId(), null);
         SupplierPayment p = new SupplierPayment();
         p.setBusinessId(bid);
         p.setSupplierId(id);
@@ -190,6 +195,7 @@ public class PurchasingService {
         Map<UUID, Product> productById = products.findAllById(locked.stream().map(v -> v.getProduct().getId()).collect(Collectors.toSet()))
             .stream().collect(Collectors.toMap(Product::getId, p -> p));
 
+        UUID branchId = stock.resolveBranch(bid, req.branchId());
         BigDecimal total = BigDecimal.ZERO;
         for (ItemRequest i : req.items()) {
             ProductVariant v = byId.get(i.variantId());
@@ -197,7 +203,8 @@ public class PurchasingService {
             if (!v.isActive() || p.getStatus() != ProductStatus.ACTIVE) {
                 throw ApiException.badRequest(p.getName() + " is archived. Restore it before receiving stock.");
             }
-            total = total.add(i.unitCost().multiply(BigDecimal.valueOf(i.quantity())));
+            units.requireValidQuantity(v, i.quantity());
+            total = total.add(i.unitCost().multiply(i.quantity()));
         }
         total = Money.scale(total);
         BigDecimal paid = Money.scale(req.amountPaid());
@@ -216,9 +223,11 @@ public class PurchasingService {
         business.setPurchaseCounter(business.getPurchaseCounter() + 1);
         Purchase pu = new Purchase();
         pu.setBusinessId(bid);
+        pu.setBranchId(branchId);
         pu.setPurchaseNumber(business.getPurchaseCounter());
         pu.setSupplierId(supplier == null ? null : supplier.getId());
         pu.setReference(blank(req.reference()));
+        pu.setPaymentMethod(req.paymentMethod() == null ? PaymentMethod.CASH : req.paymentMethod());
         pu.setTotal(total);
         pu.setAmountPaid(paid);
         pu.setAmountOwed(owed);
@@ -233,7 +242,7 @@ public class PurchasingService {
             Product p = productById.get(v.getProduct().getId());
             // Cost first (uses the quantity on hand before this delivery), then the stock itself.
             v.setCost(CostMath.weightedAverage(v.getQuantity(), v.getCost(), i.quantity(), i.unitCost()));
-            stock.apply(v, MovementType.RESTOCK, i.quantity(), "Purchase #" + pu.getPurchaseNumber(), ref, userId, true);
+            stock.apply(v, branchId, MovementType.RESTOCK, i.quantity(), "Purchase #" + pu.getPurchaseNumber(), ref, userId, true);
             PurchaseItem it = new PurchaseItem();
             it.setPurchaseId(pu.getId());
             it.setBusinessId(bid);
@@ -242,8 +251,12 @@ public class PurchasingService {
             it.setVariantLabel(v.getLabel());
             it.setQuantity(i.quantity());
             it.setUnitCost(Money.scale(i.unitCost()));
-            it.setLineTotal(Money.scale(i.unitCost().multiply(BigDecimal.valueOf(i.quantity()))));
+            it.setLineTotal(Money.scale(i.unitCost().multiply(i.quantity())));
+            it.setUnit(v.getUnit());
             purchaseItems.save(it);
+        }
+        if (paid.signum() > 0) {
+            finance.record(bid, req.paymentMethod() == null ? PaymentMethod.CASH : req.paymentMethod(), false, paid, "PURCHASE", "PURCHASE", pu.getId(), "Purchase #" + pu.getPurchaseNumber(), userId, branchId);
         }
         if (supplier != null && owed.signum() > 0) {
             supplier.setBalance(supplier.getBalance().add(owed));

@@ -13,6 +13,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,9 @@ public class ExpenseService {
     private final ExpenseRepository expenses;
     private final BusinessRepository businesses;
     private final AuditService audit;
+    private final com.amsati.shopscale.finance.FinanceService finance;
+    private final com.amsati.shopscale.security.AccessService access;
+    private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
 
     public record ExpenseRequest(@NotBlank @Size(max = 80) String category,
                                  @NotNull @DecimalMin(value = "0.01", message = "Enter an amount above zero") BigDecimal amount,
@@ -35,12 +39,14 @@ public class ExpenseService {
                                  @NotNull PaymentMethod paymentMethod) {}
 
     public record ExpenseDto(UUID id, String category, BigDecimal amount, LocalDate expenseDate, String description,
-                             PaymentMethod paymentMethod) {}
+                             PaymentMethod paymentMethod, String status, String decisionNote) {}
+
+    public record DecisionRequest(@Size(max = 300) String note) {}
 
     public record ExpensePage(Page<ExpenseDto> page, BigDecimal total) {}
 
     private static ExpenseDto dto(Expense e) {
-        return new ExpenseDto(e.getId(), e.getCategory(), e.getAmount(), e.getExpenseDate(), e.getDescription(), e.getPaymentMethod());
+        return new ExpenseDto(e.getId(), e.getCategory(), e.getAmount(), e.getExpenseDate(), e.getDescription(), e.getPaymentMethod(), e.getStatus(), e.getDecisionNote());
     }
 
     @Transactional
@@ -55,7 +61,13 @@ public class ExpenseService {
         e.setDescription(r.description());
         e.setPaymentMethod(r.paymentMethod());
         e.setCreatedBy(Tenant.userId());
+        // Larger expenses from people who cannot approve them wait for approval and do not touch the books until approved.
+        BigDecimal limit = b.getExpenseApprovalThreshold();
+        boolean needsApproval = limit != null && e.getAmount().compareTo(limit) >= 0 && !access.current().contains(com.amsati.shopscale.security.Permission.EXPENSES_APPROVE);
+        e.setStatus(needsApproval ? "PENDING" : "APPROVED");
+        if (!needsApproval) { e.setDecidedBy(Tenant.userId()); e.setDecidedAt(Instant.now()); }
         expenses.save(e);
+        if (!needsApproval) postToLedger(e);
         audit.record(bid, Tenant.userId(), "EXPENSE_CREATED", "expense", e.getId(), e.getCategory() + " " + e.getAmount().toPlainString());
         return dto(e);
     }
@@ -74,7 +86,42 @@ public class ExpenseService {
     public void delete(UUID id) {
         UUID bid = Tenant.businessId();
         Expense e = expenses.findByIdAndBusinessId(id, bid).orElseThrow(() -> ApiException.notFound("Expense not found"));
+        if ("APPROVED".equals(e.getStatus())) {
+            finance.record(bid, e.getPaymentMethod(), true, e.getAmount(), "EXPENSE_REVERSAL", "EXPENSE", e.getId(), "Expense deleted: " + e.getCategory(), Tenant.userId(), e.getBranchId());
+        }
         expenses.delete(e);
         audit.record(bid, Tenant.userId(), "EXPENSE_DELETED", "expense", id, e.getCategory() + " " + e.getAmount().toPlainString());
+    }
+
+    private void postToLedger(Expense e) {
+        finance.record(e.getBusinessId(), e.getPaymentMethod(), false, e.getAmount(), "EXPENSE", "EXPENSE", e.getId(), e.getCategory(), e.getCreatedBy(), e.getBranchId());
+    }
+
+    @Transactional
+    public ExpenseDto decide(UUID id, boolean approve, String note) {
+        UUID bid = Tenant.businessId();
+        Expense e = expenses.findByIdAndBusinessId(id, bid).orElseThrow(() -> ApiException.notFound("Expense not found"));
+        if (!"PENDING".equals(e.getStatus())) throw ApiException.conflict("This expense has already been decided");
+        e.setStatus(approve ? "APPROVED" : "REJECTED");
+        e.setDecidedBy(Tenant.userId());
+        e.setDecidedAt(Instant.now());
+        e.setDecisionNote(note == null || note.isBlank() ? null : note.trim());
+        if (approve) postToLedger(e);
+        audit.record(bid, Tenant.userId(), approve ? "EXPENSE_APPROVED" : "EXPENSE_REJECTED", "expense", id, e.getCategory() + " " + e.getAmount().toPlainString());
+        return dto(e);
+    }
+
+    @Transactional
+    public BigDecimal setApprovalLimit(BigDecimal limit) {
+        UUID bid = Tenant.businessId();
+        Business b = businesses.findById(bid).orElseThrow();
+        b.setExpenseApprovalThreshold(limit == null || limit.signum() <= 0 ? null : Money.scale(limit));
+        audit.record(bid, Tenant.userId(), "EXPENSE_APPROVAL_LIMIT", "business", bid, b.getExpenseApprovalThreshold() == null ? "off" : b.getExpenseApprovalThreshold().toPlainString());
+        return b.getExpenseApprovalThreshold();
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal approvalLimit() {
+        return businesses.findById(Tenant.businessId()).orElseThrow().getExpenseApprovalThreshold();
     }
 }

@@ -23,8 +23,10 @@ public class ProductVariant {
     private String barcode;
     private BigDecimal price;
     private BigDecimal cost = BigDecimal.ZERO;
-    private int quantity;
-    private int lowStockThreshold = 5;
+    private BigDecimal quantity = BigDecimal.ZERO;
+    private BigDecimal lowStockThreshold = BigDecimal.valueOf(5);
+    private String unit = "piece";
+    private boolean allowDecimal;
     private boolean active = true;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
