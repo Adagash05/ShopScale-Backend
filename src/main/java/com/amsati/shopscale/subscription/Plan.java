@@ -21,6 +21,10 @@ public class Plan {
     private int maxUsers;
     private int maxLocations;
     private Integer maxItems;
+    private Integer maxCustomers;
+    private Integer maxExpenses;
+    private Integer maxSuppliers;
+    private boolean recommended;
     private boolean active;
     private int sortOrder;
 

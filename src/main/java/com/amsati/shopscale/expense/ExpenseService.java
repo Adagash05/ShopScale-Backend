@@ -31,6 +31,7 @@ public class ExpenseService {
     private final com.amsati.shopscale.finance.FinanceService finance;
     private final com.amsati.shopscale.security.AccessService access;
     private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
+    private final com.amsati.shopscale.notification.NotificationService notify;
 
     public record ExpenseRequest(@NotBlank @Size(max = 80) String category,
                                  @NotNull @DecimalMin(value = "0.01", message = "Enter an amount above zero") BigDecimal amount,
@@ -52,6 +53,7 @@ public class ExpenseService {
     @Transactional
     public ExpenseDto create(ExpenseRequest r) {
         UUID bid = Tenant.businessId();
+        subscriptions.requireExpenseCapacity(bid, expenses.countByBusinessId(bid) + 1);
         Business b = businesses.findById(bid).orElseThrow();
         Expense e = new Expense();
         e.setBusinessId(bid);
@@ -68,6 +70,8 @@ public class ExpenseService {
         if (!needsApproval) { e.setDecidedBy(Tenant.userId()); e.setDecidedAt(Instant.now()); }
         expenses.save(e);
         if (!needsApproval) postToLedger(e);
+        else notify.publish(bid, com.amsati.shopscale.security.Permission.EXPENSES_APPROVE, "EXPENSE_PENDING", "Expense waiting for approval",
+            e.getCategory() + " · ₦" + e.getAmount().toPlainString(), "/expenses", null);
         audit.record(bid, Tenant.userId(), "EXPENSE_CREATED", "expense", e.getId(), e.getCategory() + " " + e.getAmount().toPlainString());
         return dto(e);
     }

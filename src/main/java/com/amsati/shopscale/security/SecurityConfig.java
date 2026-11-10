@@ -35,8 +35,8 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a -> a
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/team/invitations/accept", "/api/team/invitations/preview",
-                    "/api/subscriptions/plans", "/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/verify-email", "/api/team/invitations/accept", "/api/team/invitations/preview",
+                    "/api/subscriptions/plans", "/api/public/**", "/api/webhooks/**", "/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().denyAll())
             .exceptionHandling(e -> e.authenticationEntryPoint((req, res, ex) -> {
@@ -60,6 +60,14 @@ public class SecurityConfig {
         c.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         c.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+        // The public storefront is called from merchants' own domains too. No cookies or credentials are involved.
+        CorsConfiguration open = new CorsConfiguration();
+        open.setAllowedOriginPatterns(List.of("*"));
+        open.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        open.setAllowedHeaders(List.of("Content-Type"));
+        open.setAllowCredentials(false);
+        open.setMaxAge(3600L);
+        src.registerCorsConfiguration("/api/public/**", open);
         src.registerCorsConfiguration("/api/**", c);
         return src;
     }

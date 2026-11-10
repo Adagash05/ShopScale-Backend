@@ -36,6 +36,10 @@ public class SaleController {
     @PreAuthorize("@access.has('SALES_VIEW') or @access.has('SALES_HISTORY_VIEW')")
     public SaleService.SaleDto get(@PathVariable UUID id) { return service.get(id); }
 
+    @PostMapping("/price-preview")
+    @PreAuthorize("@access.has('SALES_CREATE')")
+    public java.util.List<SaleService.PreviewLine> preview(@Valid @RequestBody SaleService.PreviewRequest r) { return service.previewPrices(r); }
+
     @PostMapping("/{id}/refund")
     @PreAuthorize("@access.has('SALES_REFUND')")
     public SaleService.SaleDto refund(@PathVariable UUID id) { return returns.refundAll(id, null); }

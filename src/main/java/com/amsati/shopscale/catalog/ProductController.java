@@ -27,7 +27,9 @@ public class ProductController {
 
     @GetMapping("/api/products/sellable")
     @PreAuthorize("@access.has('SALES_CREATE') or @access.has('PRODUCTS_VIEW')")
-    public List<PosItemDto> sellable(@RequestParam(required = false) String q, @RequestParam(required = false) UUID branchId) { return service.sellable(q, branchId); }
+    public List<PosItemDto> sellable(@RequestParam(required = false) String q, @RequestParam(required = false) UUID branchId,
+                                       @RequestParam(required = false) UUID customerId,
+                                       @RequestParam(defaultValue = "40") int size) { return service.sellable(q, branchId, customerId, size); }
 
     @GetMapping("/api/products/{id}")
     @PreAuthorize("@access.has('PRODUCTS_VIEW')")

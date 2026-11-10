@@ -41,7 +41,31 @@ public class SubscriptionService {
         Subscription s = subscriptions.findByBusinessId(businessId)
             .orElseThrow(() -> ApiException.paymentRequired("This business has no subscription"));
         Plan p = plans.findById(s.getPlanCode()).orElseThrow(() -> new IllegalStateException("Plan missing: " + s.getPlanCode()));
-        return SubscriptionState.compute(s, p, Instant.now(), graceDays);
+        SubscriptionState st = SubscriptionState.compute(s, p, Instant.now(), graceDays);
+        // A lapsed trial or paid plan falls back to the permanent Free plan instead of locking the business out.
+        if ("EXPIRED".equals(st.status()) && s.getStatus() != SubscriptionStatus.SUSPENDED && !FREE.equals(p.getCode())) {
+            return plans.findById(FREE).map(f -> SubscriptionState.freeFallback(st, f)).orElse(st);
+        }
+        return st;
+    }
+
+    public static final String FREE = "FREE";
+    public record Result(String status) {}
+
+    /** Move a business to the permanent Free plan now. No payment is needed and no data is removed; limits only stop new additions. */
+    @Transactional
+    public Subscription chooseFree(UUID businessId) {
+        Plan free = plans.findById(FREE).orElseThrow(() -> new IllegalStateException("Free plan missing"));
+        Subscription s = subscriptions.findByBusinessId(businessId).orElseGet(() -> { Subscription n = new Subscription(); n.setBusinessId(businessId); return n; });
+        if (s.getStatus() == SubscriptionStatus.SUSPENDED) throw ApiException.forbidden("This account is suspended. Contact support.");
+        Instant now = Instant.now();
+        s.setPlanCode(free.getCode());
+        s.setBillingCycle(BillingCycle.MONTHLY);
+        s.setStatus(SubscriptionStatus.ACTIVE);
+        s.setCurrentPeriodStart(now);
+        s.setCurrentPeriodEnd(java.time.Instant.parse("2099-12-31T00:00:00Z"));
+        s.setUpdatedAt(now);
+        return subscriptions.save(s);
     }
 
     public void requireWritable(UUID businessId) {
@@ -62,6 +86,27 @@ public class SubscriptionService {
         if (st.maxItems() != null && activeItemsAfter > st.maxItems()) {
             throw ApiException.paymentRequired("Your " + st.planName() + " plan allows " + st.maxItems()
                 + " active products. Archive some products or upgrade.");
+        }
+    }
+
+    public void requireCustomerCapacity(UUID businessId, long customersAfter) {
+        SubscriptionState st = state(businessId);
+        if (st.maxCustomers() != null && customersAfter > st.maxCustomers()) {
+            throw ApiException.paymentRequired("Your " + st.planName() + " plan allows " + st.maxCustomers() + " customer records. Upgrade to add more customers.");
+        }
+    }
+
+    public void requireSupplierCapacity(UUID businessId, long suppliersAfter) {
+        SubscriptionState st = state(businessId);
+        if (st.maxSuppliers() != null && suppliersAfter > st.maxSuppliers()) {
+            throw ApiException.paymentRequired("Your " + st.planName() + " plan allows " + st.maxSuppliers() + " suppliers. Upgrade to add more suppliers.");
+        }
+    }
+
+    public void requireExpenseCapacity(UUID businessId, long expensesAfter) {
+        SubscriptionState st = state(businessId);
+        if (st.maxExpenses() != null && expensesAfter > st.maxExpenses()) {
+            throw ApiException.paymentRequired("Your " + st.planName() + " plan allows " + st.maxExpenses() + " expense records. Upgrade to record more expenses.");
         }
     }
 

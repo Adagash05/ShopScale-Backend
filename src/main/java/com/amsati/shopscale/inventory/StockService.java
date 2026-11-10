@@ -22,6 +22,7 @@ public class StockService {
     private final StockMovementRepository movements;
     private final BranchStockRepository branchStock;
     private final BranchRepository branches;
+    private final com.amsati.shopscale.notification.NotificationService notify;
 
     /** Apply a change at the business's main branch. */
     public StockMovement apply(ProductVariant v, MovementType type, BigDecimal change, String note, String reference,
@@ -52,7 +53,14 @@ public class StockService {
         m.setNote(note);
         m.setReference(reference);
         m.setCreatedBy(userId);
-        return movements.save(m);
+        StockMovement saved = movements.save(m);
+        BigDecimal low = v.getLowStockThreshold();
+        if (change.signum() < 0 && low != null && low.signum() > 0 && total.compareTo(low) <= 0 && total.subtract(change).compareTo(low) > 0) {
+            String name = v.getProduct().getName() + (v.getLabel() == null || v.getLabel().isBlank() ? "" : " (" + v.getLabel() + ")");
+            notify.publish(bid, com.amsati.shopscale.security.Permission.STOCK_VIEW, "LOW_STOCK", name + " is running low",
+                "Only " + total.stripTrailingZeros().toPlainString() + " left.", "/stock", "low:" + v.getId() + ":" + java.time.LocalDate.now());
+        }
+        return saved;
     }
 
     /** Quantity on hand at one branch (null = main). */

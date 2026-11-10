@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CustomerRepository extends JpaRepository<Customer, UUID> {
+    long countByBusinessId(java.util.UUID businessId);
     Optional<Customer> findByIdAndBusinessId(UUID id, UUID businessId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

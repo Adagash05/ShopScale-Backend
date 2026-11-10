@@ -20,6 +20,8 @@ public class Customer {
     private String email;
     private String address;
     private String notes;
+    private String customerType = "RETAIL";
+    private UUID priceTierId;
     private BigDecimal balance = BigDecimal.ZERO;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();

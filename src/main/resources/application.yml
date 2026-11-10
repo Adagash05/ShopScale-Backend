@@ -1,4 +1,8 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 1MB
   application:
     name: shopscale-backend
   datasource:
@@ -31,6 +35,11 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  public-api-url: ${PUBLIC_API_URL:}
+  storefront-url: ${STOREFRONT_URL:}
+  paystack:
+    secret-key: ${PAYSTACK_SECRET_KEY:}
+  encryption-key: ${APP_ENCRYPTION_KEY:}
   invitation-ttl-days: 7
   mail:
     from: ${MAIL_FROM:}

@@ -18,6 +18,7 @@ public class Product {
     private String name;
     private String description;
     private String imageUrl;
+    private String kind = "GOODS";
     @Enumerated(EnumType.STRING)
     private ProductStatus status = ProductStatus.ACTIVE;
     private Instant createdAt = Instant.now();

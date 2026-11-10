@@ -14,4 +14,8 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
     @Modifying
     @Query("update RefreshToken t set t.revokedAt = :now where t.familyId = :family and t.revokedAt is null")
     int revokeFamily(@Param("family") UUID family, @Param("now") Instant now);
+
+    @Modifying
+    @Query("update RefreshToken t set t.revokedAt = :now where t.userId = :u and t.revokedAt is null")
+    int revokeAllForUser(@Param("u") UUID userId, @Param("now") Instant now);
 }

@@ -1,38 +1,41 @@
-# ShopScale V1 — implementation progress (baseline: ShopScale-Backend (2) / ShopScale-Frontend (2))
+# ShopScale V1 - implementation progress
 
-Status legend: DONE (code written, statically reviewed) · NOT RUN = nothing here has been compiled or executed in the authoring
-environment (no Maven/npm access). Run `mvn test` and `npm test` locally.
+Last updated: 2026-11-10. Source of truth for what is built, verified and deferred. Backend: Spring Boot 3 / Java 21 / PostgreSQL / Flyway (V1-V15).
 
-## Backend (migrations V5–V7 verified on PostgreSQL 16; Java only parse-checked with javac, NOT compiled/run)
-| Area | Status |
+## Verification status (honest)
+| Check | Status |
 |---|---|
-| V5 launch pricing, branches, branch_stock, decimal quantities, units, transfers | DONE |
-| Branches API, plan location limit, branch-aware stock (`StockService`), unit conversions, stock transfers | DONE |
-| Sales / purchases / inventory adjust on decimals and branches; POS item list per branch | DONE |
-| Permissions added + roles renamed (Cashier, Storekeeper, Restaurant/kitchen staff); business types Wholesale/Catering/Production/Livestock | DONE |
-| Workflows + IndustryGuard; auth response carries features/workflows/plan | DONE |
-| V6 purchase orders with partial receiving (`/api/purchase-orders`) | DONE |
-| V7 finance: cash/bank accounts, money ledger (posted by sales, refunds, customer payments, expenses, purchases, supplier payments), expense approvals, cashier shifts + reconciliation, summary/debtors/payables | DONE |
+| Java syntax of every source file (javac parse) | Done, no errors |
+| Maven compile, unit tests (`mvn test`) | **NOT RUN** - the build sandbox had no network, so Maven could not download dependencies. Run `mvn -B verify` first. |
+| Migrations V1-V15 on PostgreSQL 16 | **Applied successfully, in order, to an empty database** with psql (not through Flyway itself). Plan rows and feature lists were queried afterwards and match the approved configuration. Entity fields were cross-checked against the resulting columns (heuristic script, no mismatches). |
+| Real Paystack calls (merchant and AMSATI) | **NOT TESTED** - needs real keys. Signature, amount and currency checks are implemented and unit-structured, never exercised against Paystack. |
+| Frontend build / tests | NOT RUN (see frontend progress file). |
 
-## Frontend
-Module registry wired into App/More/Layout; Locations, Stock transfers, Supplier orders, Cash and bank, Money overview, Cashier shifts pages; decimal quantities + units in product form, sell, stock adjust, purchase; expense approval UI. Not built or run (no npm); JSX syntax-checked only.
+## Completed (code written)
+- Core POS, inventory (branch-aware, single stock writer), sales with refunds/returns, quotes and sales orders, receipts.
+- Wholesale: price tiers, bulk price breaks, agreed customer prices. Prices always computed on the server.
+- Purchasing, purchase orders, suppliers and balances, customer balances and part payments.
+- Branches and stock transfers; employees, roles and permissions; invitations.
+- Finance: expenses with approval limit, cash/bank accounts, shifts, ledger.
+- Accounts: password reset, email verification (email sending optional), in-app notifications, activity history.
+- **Plans (final approved configuration, V15)**: FREE ₦0; ESSENTIAL ₦4,999 / ₦49,990; GROWTH ₦11,999 / ₦119,990 (flagged `recommended`); BUSINESS ₦24,999 / ₦249,990. Limits (users / locations / products / customers / expenses / suppliers): Free 1/1/15/15/15/5; Essential 2/1/100/100/100/20; Growth 5/2/500/unlimited/unlimited/50; Business 10/5/unlimited x4. Unlimited = NULL. Enforced in `SubscriptionService` (users, locations, active products, customers, expenses, suppliers); archived products do not count. A lapsed paid plan or trial falls back to Free (writable, no deletion). Switching to a plan is refused while users/locations exceed its limits. STARTER is hidden, not deleted. Online store and online orders start at Growth, custom domain at Business, CSV export at Essential.
+- **Online storefront** (`store/`): settings, public catalogue (server pricing, stock check), orders, product images (DB, magic-byte validated, 600 KB), custom domain with DNS TXT verification (Business plan).
+- **Merchant Paystack**: each merchant's own keys, validated against Paystack, stored AES-GCM encrypted (`APP_ENCRYPTION_KEY`), never returned. Initialize -> customer return `verify` and signed webhook `/api/webhooks/paystack/store/{slug}` (HMAC-SHA512 with that merchant's secret, then re-verified by API). Amount (kobo) and currency must match, idempotent, a sale is created in its own transaction; failures are flagged on the order ("needs attention"), never lost.
+- Merchant order management: NEW -> CONFIRMED -> READY -> COMPLETED, cancel (blocked once a sale exists), pay-later completion with payment method, notification on new order.
+- **ShopScale billing** (`subscription/BillingService`): AMSATI Paystack account (`PAYSTACK_SECRET_KEY`). Checkout, server-side verify, signed webhook `/api/webhooks/paystack/subscriptions`, one-time activation, payment history, failed/mismatch handling, cancel (access until period end), upgrade/downgrade with prorated credit and seat/location fit checks, daily expiry reminders. A subscription is **never** activated from a redirect.
+- CSV export (products, customers, sales, expenses) on all plans.
+- Offline POS support is server-side idempotency by `clientRequestId`.
 
-## Outstanding (in order)
-POS partial refunds/voids/quotes/sales orders/reports · wholesale tiers/customer types · notifications · restaurant/kitchen/recipes/wastage · production ·
-catering · storefront + merchant Paystack · AMSATI subscription billing + new pricing page · CSV import/export · images · password reset/email verification ·
-offline POS · industry onboarding/nav/dashboards (Livestock choice in onboarding UI) · settings UI for expense approval limit · marketing copy · docs · tests · final ZIPs.
+## Not built / limits
+- **No automatic card charging.** Plans are prepaid for one month/year; renewal is a new checkout (reminders are sent).
+- Seat enforcement blocks adding users beyond the plan; it does not lock out existing users after a downgrade by lapse.
+- CSV **import** is not built.
+- Email delivery needs SMTP settings; without them links are shown to the user.
+- Merchant payments are not posted to the cash ledger (money settles to the merchant's Paystack account).
+- Custom domain needs DNS (CNAME + TXT) and TLS at your host; serving the SPA on that host is a deployment task.
 
-## Update — POS returns, quotes/orders, sales reports (V8)
-- DONE (backend, parse-checked only; not compiled): V8 migration (verified applying on PostgreSQL 16), partial/full refunds, voids, quotations, customer orders with deposits, `/api/sales/report`.
-- DONE (frontend, syntax-checked only; not built): SalesHistory return/void modals, `pages/pos/Documents.jsx` (Quotes/Orders), `pages/pos/SalesReport.jsx`, `modules/pos/index.js` (routes more/quotes, more/orders-in, more/sales-report). DTO field names cross-checked against SalesDocumentService / SalesReportService.
-- Known limitation: dashboard payment-method breakdown does not subtract partial refunds.
-- NEXT: wholesale tiered pricing + customer types, then notifications, restaurant, production, catering, storefront + merchant Paystack, subscription billing, CSV, images, password reset/email verification, offline POS, industry onboarding/nav, docs, tests update, ZIP delivery.
+## DEFERRED (post-V1, per instruction 2026-11-10)
+Restaurant (menus, modifiers, tables, kitchen), recipes/production, wastage, catering. Backend code and migration V12 are kept as-is (`recipe/`, `restaurant/`) but have **no UI**, are untested and not advertised. Livestock: choice is stored; no livestock features exist.
 
-## STATUS AT DELIVERY — V1 IS NOT COMPLETE (intermediate delivery requested by the user)
-Verification: migrations V1–V8 applied on PostgreSQL 16 (executed). Java: parse-only javac check (no compile, symbols unresolved). Frontend: JSX syntax check only. NO unit tests, NO Maven build, NO npm build were run. Existing tests were not updated for changed signatures (decimal quantities, SubscriptionState, ItemDto/SaleDto) and will likely need fixes.
-
-IMPLEMENTED (unverified beyond the above): branches + branch stock, decimal quantities/units/conversions, stock transfers, suppliers/purchase orders/partial receiving, cash & bank accounts + ledger, expenses with approvals, cashier shifts, refunds/voids, quotations, customer orders with deposits, sales reports, granular permissions/six default roles, launch pricing plans (V5), industry workflow guard, Livestock industry persisted.
-
-NOT IMPLEMENTED (outstanding): wholesale tiered pricing/customer types; notifications; restaurant (menu, modifiers, tables, kitchen, recipes, wastage); production/recipes; catering; online storefront + merchant Paystack; AMSATI subscription billing (Paystack verify/webhooks/renew/upgrade/downgrade/cancel) and pricing-page copy; CSV import/export; product images; password reset + email verification; offline POS (PWA/IndexedDB/sync); employee invitation + activity-history UI; industry-specific onboarding/nav/dashboards; domain/CORS/redirect config; settings UI for expense approval limit; README/env/deployment/API docs; test updates.
-
-EXACT NEXT TASK: wholesale tiered pricing (price_tiers + customers.customer_type, migration V9, SaleService price resolution server-side, UI in ProductForm/Customers), then notifications, then restaurant.
+## Notes on plan features
+Several feature flags (STAFF_PERMISSIONS, ADVANCED_REPORTS, ENHANCED_DASHBOARD, ADVANCED_FINANCE, LOCATION_REPORTING, ADVANCED_STAFF_PERMISSIONS, PRIORITY_SUPPORT, CONSOLIDATED_REPORTING, ADVANCED_INVENTORY, ACTIVITY_HISTORY) are assigned per the approved plan table but are not all enforced by a dedicated screen or check yet; the enforced flags are POS-adjacent basics, PURCHASING (purchase orders), SUPPLIER_BALANCES, DATA_EXPORT, CASH_ACCOUNTS/RECONCILIATION, BRANCH_TRANSFERS, STOREFRONT, CUSTOM_DOMAINS, WHOLESALE_PRICING. Restaurant/catering flags (V12) remain granted to Essential-Business but those modules are deferred and not advertised. "Basic purchasing" (Essential) and "advanced purchasing" (Growth) are not separated in code: both use PURCHASING.

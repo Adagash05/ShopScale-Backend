@@ -13,6 +13,9 @@ import com.amsati.shopscale.common.DateRange;
 import com.amsati.shopscale.common.Money;
 import com.amsati.shopscale.common.PaymentMethod;
 import com.amsati.shopscale.customer.Customer;
+import com.amsati.shopscale.pricing.PricingService;
+import com.amsati.shopscale.recipe.Recipe;
+import com.amsati.shopscale.recipe.RecipeService;
 import com.amsati.shopscale.customer.CustomerRepository;
 import com.amsati.shopscale.inventory.MovementType;
 import com.amsati.shopscale.inventory.StockService;
@@ -53,6 +56,8 @@ public class SaleService {
     private final AccessService access;
     private final com.amsati.shopscale.finance.FinanceService finance;
     private final com.amsati.shopscale.unit.UnitService units;
+    private final PricingService pricingService;
+    private final RecipeService recipeService;
 
     // ---------- request / response ----------
     public record ItemRequest(@NotNull UUID variantId,
@@ -90,9 +95,35 @@ public class SaleService {
         return createInternal(req, "POS", null, null, false);
     }
 
+    public record PreviewRequest(@jakarta.validation.constraints.NotEmpty @Valid List<ItemRequest> items, UUID customerId) {}
+    public record PreviewLine(UUID variantId, BigDecimal unitPrice) {}
+
+    /** What each line would cost this customer. Display only; the sale itself is always priced again on the server. */
+    @Transactional(readOnly = true)
+    public List<PreviewLine> previewPrices(PreviewRequest req) {
+        UUID bid = Tenant.businessId();
+        Customer customer = req.customerId() == null ? null : customers.findByIdAndBusinessId(req.customerId(), bid).orElse(null);
+        Map<UUID, BigDecimal> wanted = new LinkedHashMap<>();
+        Map<UUID, ProductVariant> byId = variants.findAllById(req.items().stream().map(ItemRequest::variantId).collect(Collectors.toSet()))
+            .stream().filter(v -> v.getBusinessId().equals(bid)).collect(Collectors.toMap(ProductVariant::getId, v -> v));
+        for (ItemRequest i : req.items()) {
+            ProductVariant v = byId.get(i.variantId());
+            if (v == null) continue;
+            wanted.merge(v.getId(), units.toBase(v, i.unit(), i.quantity()), BigDecimal::add);
+        }
+        PricingService.Context ctx = pricingService.context(bid, customer, wanted.keySet());
+        return wanted.entrySet().stream().map(e -> new PreviewLine(e.getKey(), Money.scale(ctx.priceFor(byId.get(e.getKey()), e.getValue())))).toList();
+    }
+
     /** Shared by the POS and by quote/order conversion. {@code prepaid} is money already received (a deposit) and is not posted to the ledger again. */
     @Transactional
     public SaleDto createInternal(SaleRequest req, String channel, BigDecimal prepaid, PaymentMethod prepaidMethod, boolean trustedDiscount) {
+        return createInternal(req, channel, prepaid, prepaidMethod, trustedDiscount, BigDecimal.ZERO);
+    }
+
+    /** {@code surcharge} is server-computed extra charge on top of the items (for example paid menu modifiers). */
+    @Transactional
+    public SaleDto createInternal(SaleRequest req, String channel, BigDecimal prepaid, PaymentMethod prepaidMethod, boolean trustedDiscount, BigDecimal surcharge) {
         UUID bid = Tenant.businessId();
         UUID userId = Tenant.userId();
 
@@ -126,6 +157,16 @@ public class SaleService {
             locked.stream().map(v -> v.getProduct().getId()).collect(Collectors.toSet()))
             .stream().collect(Collectors.toMap(Product::getId, p -> p));
 
+        Customer customer = null;
+        if (req.customerId() != null) {
+            customer = customers.findForUpdate(req.customerId(), bid).orElseThrow(() -> ApiException.badRequest("Customer not found"));
+        }
+        // Prices are decided here from the customer's type/tier, agreed prices and bulk breaks, never from the client.
+        PricingService.Context pricing = pricingService.context(bid, customer, wanted.keySet());
+        // Menu items made to order use their ingredients, not their own stock.
+        Map<UUID, Recipe> madeToOrder = recipeService.madeToOrder(bid, wanted.keySet());
+        Map<UUID, BigDecimal> unitCosts = new HashMap<>();
+        Map<UUID, BigDecimal> unitPrices = new HashMap<>();
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal costTotal = BigDecimal.ZERO;
         for (Map.Entry<UUID, BigDecimal> e : wanted.entrySet()) {
@@ -133,12 +174,21 @@ public class SaleService {
             Product p = productById.get(v.getProduct().getId());
             String display = displayName(p, v);
             if (!v.isActive() || p.getStatus() != ProductStatus.ACTIVE) throw ApiException.badRequest(display + " is no longer for sale");
-            BigDecimal here = stock.onHand(v, branchId);
-            if (!business.isAllowNegativeStock() && here.compareTo(e.getValue()) < 0) {
-                throw ApiException.conflict("Not enough stock for " + display + ". Only " + here.stripTrailingZeros().toPlainString() + " left at this branch.");
+            Recipe made = madeToOrder.get(v.getId());
+            if (made != null) {
+                recipeService.requireIngredients(made, e.getValue(), branchId, business.isAllowNegativeStock());
+                unitCosts.put(v.getId(), recipeService.unitCost(made));
+            } else {
+                unitCosts.put(v.getId(), v.getCost());
+                BigDecimal here = stock.onHand(v, branchId);
+                if (!business.isAllowNegativeStock() && here.compareTo(e.getValue()) < 0) {
+                    throw ApiException.conflict("Not enough stock for " + display + ". Only " + here.stripTrailingZeros().toPlainString() + " left at this branch.");
+                }
             }
-            subtotal = subtotal.add(v.getPrice().multiply(e.getValue()));
-            costTotal = costTotal.add(v.getCost().multiply(e.getValue()));
+            BigDecimal unitPrice = Money.scale(pricing.priceFor(v, e.getValue()));
+            unitPrices.put(v.getId(), unitPrice);
+            subtotal = subtotal.add(unitPrice.multiply(e.getValue()));
+            costTotal = costTotal.add(unitCosts.get(v.getId()).multiply(e.getValue()));
         }
         subtotal = Money.scale(subtotal);
         costTotal = Money.scale(costTotal);
@@ -146,7 +196,8 @@ public class SaleService {
         BigDecimal discount = Money.scale(req.discount());
         if (discount.signum() > 0 && !trustedDiscount) access.require(Permission.SALES_DISCOUNT);
         if (discount.compareTo(subtotal) > 0) throw ApiException.badRequest("The discount is more than the total of the items");
-        BigDecimal total = subtotal.subtract(discount);
+        BigDecimal extra = surcharge == null ? BigDecimal.ZERO : Money.scale(surcharge);
+        BigDecimal total = subtotal.subtract(discount).add(extra);
 
         List<PayRequest> pays = req.payments() == null ? List.of() : req.payments();
         BigDecimal prepaidAmt = prepaid == null ? BigDecimal.ZERO : Money.scale(prepaid);
@@ -154,11 +205,7 @@ public class SaleService {
         if (paid.compareTo(total) > 0) throw ApiException.badRequest("Payments add up to more than the sale total");
         BigDecimal owed = total.subtract(paid);
 
-        Customer customer = null;
-        if (req.customerId() != null || owed.signum() > 0) {
-            if (req.customerId() == null) throw ApiException.badRequest("Choose a customer to sell on credit");
-            customer = customers.findForUpdate(req.customerId(), bid).orElseThrow(() -> ApiException.badRequest("Customer not found"));
-        }
+        if (owed.signum() > 0 && customer == null) throw ApiException.badRequest("Choose a customer to sell on credit");
         if (owed.signum() > 0) subscriptions.requireFeature(bid, "CUSTOMER_CREDIT", "Selling on credit");
         if (total.signum() == 0 && paid.signum() == 0 && owed.signum() == 0 && subtotal.signum() > 0 && discount.compareTo(subtotal) != 0) {
             throw ApiException.badRequest("Nothing to record");
@@ -176,6 +223,7 @@ public class SaleService {
         sale.setSubtotal(subtotal);
         sale.setDiscount(discount);
         sale.setTotal(total);
+        sale.setSurcharge(extra);
         sale.setAmountPaid(paid);
         sale.setAmountOwed(owed);
         sale.setCostTotal(costTotal);
@@ -196,11 +244,13 @@ public class SaleService {
             item.setVariantLabel(v.getLabel());
             item.setQuantity(e.getValue());
             item.setUnit(v.getUnit());
-            item.setUnitPrice(v.getPrice());
-            item.setUnitCost(v.getCost());
-            item.setLineTotal(Money.scale(v.getPrice().multiply(e.getValue())));
+            item.setUnitPrice(unitPrices.get(v.getId()));
+            item.setUnitCost(unitCosts.get(v.getId()));
+            item.setLineTotal(Money.scale(unitPrices.get(v.getId()).multiply(e.getValue())));
             saleItems.save(item);
-            stock.apply(v, branchId, MovementType.SALE, e.getValue().negate(), null, reference, userId, business.isAllowNegativeStock());
+            Recipe made = madeToOrder.get(v.getId());
+            if (made != null) recipeService.consume(made, e.getValue(), branchId, MovementType.SALE, reference, userId, business.isAllowNegativeStock());
+            else stock.apply(v, branchId, MovementType.SALE, e.getValue().negate(), null, reference, userId, business.isAllowNegativeStock());
         }
         for (PayRequest pr : pays) {
             SalePayment sp = new SalePayment();

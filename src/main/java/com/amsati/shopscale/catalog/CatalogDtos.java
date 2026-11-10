@@ -33,7 +33,8 @@ public final class CatalogDtos {
         @Size(max = 2000) String description,
         UUID categoryId,
         @Size(max = 500) String imageUrl,
-        @NotEmpty @Valid List<VariantRequest> variants) {}
+        @NotEmpty @Valid List<VariantRequest> variants,
+        @Size(max = 12) String kind) {}
 
     public record CategoryRequest(@NotBlank @Size(max = 80) String name) {}
 
@@ -42,10 +43,11 @@ public final class CatalogDtos {
 
     public record ProductDto(UUID id, String name, String description, String imageUrl, UUID categoryId,
                              String categoryName, ProductStatus status, List<VariantDto> variants, BigDecimal totalQuantity,
-                             Instant createdAt) {}
+                             Instant createdAt, String kind) {}
 
     public record CategoryDto(UUID id, String name) {}
 
     public record PosItemDto(UUID variantId, UUID productId, String productName, String label, String sku,
-                             BigDecimal price, BigDecimal quantity, String unit, boolean allowDecimal) {}
+                             BigDecimal price, BigDecimal quantity, String unit, boolean allowDecimal,
+                             String kind, boolean madeToOrder) {}
 }

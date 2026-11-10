@@ -108,6 +108,7 @@ public class PurchasingService {
 
     @Transactional
     public SupplierDto createSupplier(SupplierRequest r) {
+        subscriptions.requireSupplierCapacity(Tenant.businessId(), suppliers.countByBusinessId(Tenant.businessId()) + 1);
         Supplier s = new Supplier();
         s.setBusinessId(Tenant.businessId());
         applySupplier(s, r);

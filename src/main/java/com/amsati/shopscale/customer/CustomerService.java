@@ -31,22 +31,25 @@ public class CustomerService {
     private final SaleRepository sales;
     private final SubscriptionService subscriptions;
     private final AuditService audit;
+    private final com.amsati.shopscale.pricing.PriceTierRepository tiers;
 
     public record CustomerRequest(@NotBlank @Size(max = 150) String name, @Size(max = 40) String phone,
                                   @Size(max = 255) String email, @Size(max = 500) String address,
-                                  @Size(max = 1000) String notes) {}
+                                  @Size(max = 1000) String notes,
+                                  String customerType, UUID priceTierId) {}
 
     public record PaymentRequest(@NotNull @DecimalMin(value = "0.01", message = "Enter an amount above zero") BigDecimal amount,
                                  @NotNull PaymentMethod method, @Size(max = 300) String note) {}
 
-    public record CustomerDto(UUID id, String name, String phone, String email, String address, String notes, BigDecimal balance) {}
+    public record CustomerDto(UUID id, String name, String phone, String email, String address, String notes, BigDecimal balance,
+                              String customerType, UUID priceTierId) {}
 
     public record PaymentDto(UUID id, BigDecimal amount, PaymentMethod method, String note, Instant createdAt) {}
 
     public record CustomerDetail(CustomerDto customer, List<PaymentDto> payments, List<SaleSummary> recentSales) {}
 
     private static CustomerDto dto(Customer c) {
-        return new CustomerDto(c.getId(), c.getName(), c.getPhone(), c.getEmail(), c.getAddress(), c.getNotes(), Money.scale(c.getBalance()));
+        return new CustomerDto(c.getId(), c.getName(), c.getPhone(), c.getEmail(), c.getAddress(), c.getNotes(), Money.scale(c.getBalance()), c.getCustomerType(), c.getPriceTierId());
     }
 
     private static String like(String q) {
@@ -63,6 +66,7 @@ public class CustomerService {
 
     @Transactional
     public CustomerDto create(CustomerRequest r) {
+        subscriptions.requireCustomerCapacity(Tenant.businessId(), customers.countByBusinessId(Tenant.businessId()) + 1);
         Customer c = new Customer();
         c.setBusinessId(Tenant.businessId());
         apply(c, r);
@@ -85,7 +89,17 @@ public class CustomerService {
         c.setEmail(blank(r.email()));
         c.setAddress(blank(r.address()));
         c.setNotes(blank(r.notes()));
+        String type = r.customerType() == null || r.customerType().isBlank() ? "RETAIL" : r.customerType().trim().toUpperCase();
+        if (!TYPES.contains(type)) throw ApiException.badRequest("Choose a valid customer type");
+        c.setCustomerType(type);
+        if (r.priceTierId() != null) {
+            subscriptions.requireFeature(c.getBusinessId(), "WHOLESALE_PRICING", "Customer price tiers");
+            tiers.findByIdAndBusinessId(r.priceTierId(), c.getBusinessId()).orElseThrow(() -> ApiException.badRequest("Price tier not found"));
+        }
+        c.setPriceTierId(r.priceTierId());
     }
+
+    private static final java.util.Set<String> TYPES = java.util.Set.of("RETAIL", "WHOLESALE", "DISTRIBUTOR", "CORPORATE", "RESTAURANT");
 
     private static String blank(String s) { return s == null || s.isBlank() ? null : s.trim(); }
 

@@ -51,6 +51,7 @@ public class SalesDocumentService {
     private final FinanceService finance;
     private final AccessService access;
     private final AuditService audit;
+    private final com.amsati.shopscale.pricing.PricingService pricingService;
 
     public record ItemRequest(@NotNull UUID variantId, @NotNull @DecimalMin(value = "0.001", message = "Quantity must be greater than zero") BigDecimal quantity) {}
     public record DocRequest(@NotNull String kind, UUID customerId, UUID branchId, LocalDate validUntil, LocalDate deliveryDate,
@@ -74,7 +75,9 @@ public class SalesDocumentService {
         Map<UUID, ProductVariant> byId = variants.findAllById(ids).stream().filter(v -> v.getBusinessId().equals(bid)).collect(Collectors.toMap(ProductVariant::getId, v -> v));
         if (byId.size() != ids.size()) throw ApiException.badRequest("One of the products no longer exists");
         UUID branch = stock.resolveBranch(bid, r.branchId());
-        if (r.customerId() != null) customers.findByIdAndBusinessId(r.customerId(), bid).orElseThrow(() -> ApiException.badRequest("Customer not found"));
+        com.amsati.shopscale.customer.Customer cust = r.customerId() == null ? null
+            : customers.findByIdAndBusinessId(r.customerId(), bid).orElseThrow(() -> ApiException.badRequest("Customer not found"));
+        var pricing = pricingService.context(bid, cust, ids);
         if (order && r.customerId() == null) throw ApiException.badRequest("Choose the customer this order is for");
 
         BigDecimal subtotal = BigDecimal.ZERO;
@@ -88,8 +91,9 @@ public class SalesDocumentService {
             it.setProductName(v.getProduct().getName());
             it.setVariantLabel(v.getLabel());
             it.setQuantity(i.quantity());
-            it.setUnitPrice(v.getPrice());
-            it.setLineTotal(Money.scale(v.getPrice().multiply(i.quantity())));
+            BigDecimal unitPrice = Money.scale(pricing.priceFor(v, i.quantity()));
+            it.setUnitPrice(unitPrice);
+            it.setLineTotal(Money.scale(unitPrice.multiply(i.quantity())));
             subtotal = subtotal.add(it.getLineTotal());
             lines.add(it);
         }
@@ -161,10 +165,12 @@ public class SalesDocumentService {
         List<SalesDocumentItem> lines = docItems.findByDocumentId(d.getId());
         Map<UUID, ProductVariant> byId = variants.findAllById(lines.stream().map(SalesDocumentItem::getVariantId).toList()).stream().collect(Collectors.toMap(ProductVariant::getId, v -> v));
         BigDecimal current = BigDecimal.ZERO;
+        var cust = d.getCustomerId() == null ? null : customers.findByIdAndBusinessId(d.getCustomerId(), bid).orElse(null);
+        var pricing = pricingService.context(bid, cust, byId.keySet());
         List<SaleService.ItemRequest> items = new ArrayList<>();
         for (SalesDocumentItem l : lines) {
             ProductVariant v = byId.get(l.getVariantId());
-            current = current.add(v.getPrice().multiply(l.getQuantity()));
+            current = current.add(Money.scale(pricing.priceFor(v, l.getQuantity())).multiply(l.getQuantity()));
             items.add(new SaleService.ItemRequest(l.getVariantId(), l.getQuantity(), null));
         }
         // Honour the quoted total: if prices have gone up since, the gap is given as a discount. If they went down, today's lower price applies.

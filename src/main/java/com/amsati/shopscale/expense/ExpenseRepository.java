@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
+    long countByBusinessId(java.util.UUID businessId);
     interface DayTotal {
         LocalDate getDay();
         BigDecimal getTotal();

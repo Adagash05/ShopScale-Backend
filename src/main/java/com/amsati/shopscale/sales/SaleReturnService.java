@@ -44,6 +44,7 @@ public class SaleReturnService {
     private final FinanceService finance;
     private final SaleService saleService;
     private final AuditService audit;
+    private final com.amsati.shopscale.recipe.RecipeService recipes;
 
     public record Line(@NotNull UUID saleItemId, @NotNull @DecimalMin(value = "0.001", message = "Quantity must be greater than zero") BigDecimal quantity,
                        Boolean returnToStock) {}
@@ -127,7 +128,9 @@ public class SaleReturnService {
             it.setQuantityRefunded(it.getQuantityRefunded().add(l.quantity()));
             boolean back = l.returnToStock() == null || l.returnToStock();
             ProductVariant v = vs.get(it.getVariantId());
-            if (back && v != null) stock.apply(v, sale.getBranchId(), MovementType.REFUND, l.quantity(), "Returned by customer", ref, uid, true);
+            // Items made to order cannot be put back on a shelf; their ingredients were already used.
+            boolean madeToOrder = v != null && !recipes.madeToOrder(sale.getBusinessId(), java.util.Set.of(v.getId())).isEmpty();
+            if (back && v != null && !madeToOrder) stock.apply(v, sale.getBranchId(), MovementType.REFUND, l.quantity(), "Returned by customer", ref, uid, true);
             SaleRefundItem ri = new SaleRefundItem();
             ri.setRefundId(rf.getId());
             ri.setSaleItemId(it.getId());

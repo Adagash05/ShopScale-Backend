@@ -10,6 +10,7 @@ import com.amsati.shopscale.inventory.MovementType;
 import com.amsati.shopscale.inventory.StockService;
 import com.amsati.shopscale.security.Tenant;
 import com.amsati.shopscale.subscription.SubscriptionService;
+import com.amsati.shopscale.industry.Workflow;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
@@ -34,6 +35,9 @@ public class ProductService {
     private final com.amsati.shopscale.branch.BranchStockRepository branchStock;
     private final SubscriptionService subscriptions;
     private final AuditService audit;
+    private final com.amsati.shopscale.pricing.PricingService pricing;
+    private final com.amsati.shopscale.recipe.RecipeService recipes;
+    private final com.amsati.shopscale.industry.IndustryGuard industry;
 
     private static String like(String q) {
         return "%" + (q == null ? "" : q.trim().toLowerCase().replace("%", "").replace("_", "")) + "%";
@@ -95,7 +99,7 @@ public class ProductService {
             List<VariantDto> vs = byProduct.getOrDefault(p.getId(), List.of()).stream().map(ProductService::toDto).toList();
             BigDecimal total = vs.stream().map(VariantDto::quantity).reduce(BigDecimal.ZERO, BigDecimal::add);
             return new ProductDto(p.getId(), p.getName(), p.getDescription(), p.getImageUrl(), p.getCategoryId(),
-                p.getCategoryId() == null ? null : categoryNames.get(p.getCategoryId()), p.getStatus(), vs, total, p.getCreatedAt());
+                p.getCategoryId() == null ? null : categoryNames.get(p.getCategoryId()), p.getStatus(), vs, total, p.getCreatedAt(), p.getKind());
         });
     }
 
@@ -106,14 +110,26 @@ public class ProductService {
 
     /** Flat list of sellable variants for the POS search box. */
     @Transactional(readOnly = true)
-    public List<PosItemDto> sellable(String q, UUID branchId) {
+    public List<PosItemDto> sellable(String q, UUID branchId, UUID customerId, int limit) {
         UUID bid = Tenant.businessId();
         UUID branch = stock.resolveBranch(bid, branchId);
         java.util.Map<UUID, BigDecimal> here = new java.util.HashMap<>();
         branchStock.forBranch(bid, branch).forEach(s -> here.put(s.getId().getVariantId(), s.getQuantity()));
-        return variants.sellable(bid, ProductStatus.ACTIVE, like(q), PageRequest.of(0, 40)).stream()
+        List<ProductVariant> found = variants.sellable(bid, ProductStatus.ACTIVE, like(q), PageRequest.of(0, Math.min(Math.max(limit, 1), 500)));
+        java.util.Map<UUID, BigDecimal> shown = pricing.displayPrices(customerId, found);
+        java.util.Set<UUID> mto = recipes.madeToOrder(bid, found.stream().map(ProductVariant::getId).toList()).keySet();
+        return found.stream().filter(v -> !"INGREDIENT".equals(v.getProduct().getKind()))
             .map(v -> new PosItemDto(v.getId(), v.getProduct().getId(), v.getProduct().getName(), v.getLabel(),
-                v.getSku(), v.getPrice(), here.getOrDefault(v.getId(), BigDecimal.ZERO), v.getUnit(), v.isAllowDecimal())).toList();
+                v.getSku(), shown.getOrDefault(v.getId(), v.getPrice()), here.getOrDefault(v.getId(), BigDecimal.ZERO), v.getUnit(), v.isAllowDecimal(),
+                v.getProduct().getKind(), mto.contains(v.getId()))).toList();
+    }
+
+    /** GOODS is plain stock. MENU, INGREDIENT and FINISHED belong to restaurant, catering and production businesses. */
+    private void applyKind(UUID bid, Product p, String kind) {
+        String k = kind == null || kind.isBlank() ? (p.getKind() == null ? "GOODS" : p.getKind()) : kind.trim().toUpperCase();
+        if (!java.util.Set.of("GOODS", "INGREDIENT", "MENU", "FINISHED").contains(k)) throw ApiException.badRequest("Choose a valid product type");
+        if (!"GOODS".equals(k)) industry.requireAny(bid, Workflow.RESTAURANT, Workflow.PRODUCTION, Workflow.CATERING);
+        p.setKind(k);
     }
 
     // ---------- writes ----------
@@ -131,6 +147,7 @@ public class ProductService {
         p.setDescription(r.description());
         p.setImageUrl(r.imageUrl());
         p.setCategoryId(r.categoryId());
+        applyKind(bid, p, r.kind());
         products.save(p);
 
         for (VariantRequest vr : r.variants()) createVariant(p, vr, b.isAllowNegativeStock());
@@ -150,6 +167,7 @@ public class ProductService {
         p.setDescription(r.description());
         p.setImageUrl(r.imageUrl());
         p.setCategoryId(r.categoryId());
+        applyKind(bid, p, r.kind());
         p.setUpdatedAt(Instant.now());
 
         Map<UUID, ProductVariant> existing = variants.findByProductId(id).stream()

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface BusinessRepository extends JpaRepository<Business, UUID> {
     boolean existsBySlug(String slug);
+    Optional<Business> findBySlug(String slug);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from Business b where b.id = :id")

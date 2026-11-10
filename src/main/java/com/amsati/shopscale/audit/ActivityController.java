@@ -30,6 +30,28 @@ public class ActivityController {
     private final UserRepository users;
     private final AccessService access;
 
+    public record HistoryPage(List<ActivityDto> items, long total, int page, int size) {}
+
+    /** Full, filterable history for people with ACTIVITY_VIEW. */
+    @GetMapping("/history")
+    @PreAuthorize("@access.has('ACTIVITY_VIEW')")
+    @Transactional(readOnly = true)
+    public HistoryPage history(@RequestParam(required = false) UUID userId, @RequestParam(required = false) String entity,
+                               @RequestParam(required = false) String action,
+                               @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "30") int size) {
+        var pr = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
+        var found = logs.search(Tenant.businessId(), userId == null ? null : userId.toString(), blank(entity), blank(action), pr);
+        Set<UUID> ids = new HashSet<>();
+        found.forEach(r -> { if (r.getUserId() != null) ids.add(r.getUserId()); });
+        Map<UUID, String> names = users.findAllById(ids).stream().collect(Collectors.toMap(User::getId, User::getFullName));
+        boolean showAmounts = access.current().contains(Permission.DASHBOARD_FINANCIAL);
+        return new HistoryPage(found.stream().map(r -> new ActivityDto(r.getId(), r.getAction(), r.getEntity(), r.getEntityId(),
+            showAmounts ? r.getDetail() : null, r.getUserId() == null ? null : names.get(r.getUserId()), r.getCreatedAt())).toList(),
+            found.getTotalElements(), found.getNumber(), found.getSize());
+    }
+
+    private static String blank(String s) { return s == null || s.isBlank() ? null : s.trim(); }
+
     public record ActivityDto(UUID id, String action, String entity, String entityId, String detail, String userName, Instant createdAt) {}
 
     @GetMapping

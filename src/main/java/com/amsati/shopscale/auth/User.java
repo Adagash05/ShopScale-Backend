@@ -18,5 +18,6 @@ public class User {
     private String fullName;
     private String phone;
     private boolean active = true;
+    private boolean emailVerified = false;
     private Instant createdAt = Instant.now();
 }

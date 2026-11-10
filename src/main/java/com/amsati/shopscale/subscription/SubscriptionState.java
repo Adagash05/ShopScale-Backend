@@ -15,7 +15,11 @@ public record SubscriptionState(
         int maxUsers,
         int maxLocations,
         Integer maxItems,       // null = unlimited
-        Set<String> features) {
+        Set<String> features,
+        Integer maxCustomers,   // null = unlimited
+        Integer maxExpenses,    // null = unlimited
+        Integer maxSuppliers,   // null = unlimited
+        String lapsedFrom) {    // plan name a Free fallback replaced, else null
 
     /**
      * Effective state at a point in time. Stored status is a hint; the period end and grace window decide access.
@@ -39,8 +43,15 @@ public record SubscriptionState(
             status = "EXPIRED"; writable = false;
         }
         return new SubscriptionState(p.getCode(), p.getName(), status, s.getBillingCycle(),
-            s.getCurrentPeriodEnd(), writable, p.getMaxUsers(), p.getMaxLocations(), p.getMaxItems(), Set.copyOf(p.getFeatures()));
+            s.getCurrentPeriodEnd(), writable, p.getMaxUsers(), p.getMaxLocations(), p.getMaxItems(), Set.copyOf(p.getFeatures()),
+            p.getMaxCustomers(), p.getMaxExpenses(), p.getMaxSuppliers(), null);
     }
 
     public boolean hasFeature(String f) { return features.contains(f); }
+
+    /** Same rules as the permanent Free plan, shown when a paid plan or trial has lapsed. Writable; data is never removed. */
+    public static SubscriptionState freeFallback(SubscriptionState lapsed, Plan free) {
+        return new SubscriptionState(free.getCode(), free.getName(), "FREE", BillingCycle.MONTHLY, null, true, free.getMaxUsers(),
+            free.getMaxLocations(), free.getMaxItems(), Set.copyOf(free.getFeatures()), free.getMaxCustomers(), free.getMaxExpenses(), free.getMaxSuppliers(), lapsed.planName());
+    }
 }

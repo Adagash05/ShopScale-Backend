@@ -106,7 +106,8 @@ public enum Permission {
     EXPENSES_APPROVE("Finance", "Approve expenses"),
     ACTIVITY_VIEW("Team", "View staff activity history"),
     DATA_IMPORT("Business settings", "Import data from CSV"),
-    DATA_EXPORT("Business settings", "Export data to CSV");
+    DATA_EXPORT("Business settings", "Export data to CSV"),
+    PRICING_MANAGE("Products and menu", "Manage wholesale prices and price tiers");
 
     private final String module;
     private final String label;

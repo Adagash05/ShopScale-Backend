@@ -10,6 +10,26 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class AuthController {
     private final AuthService service;
+    private final AccountService account;
+
+    @PostMapping("/forgot-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void forgot(@Valid @RequestBody AccountService.ForgotRequest r) { account.forgotPassword(r); }
+
+    @PostMapping("/reset-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void reset(@Valid @RequestBody AccountService.ResetRequest r) { account.resetPassword(r); }
+
+    @PostMapping("/verify-email")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void verify(@Valid @RequestBody AccountService.TokenRequest r) { account.verify(r); }
+
+    @PostMapping("/resend-verification")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resend() { account.resendVerification(); }
+
+    @GetMapping("/verification-status")
+    public AccountService.VerificationStatus verification() { return account.status(); }
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)

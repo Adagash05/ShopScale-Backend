@@ -19,7 +19,7 @@ Business rules in `application.yml` (`app.*`): enabled business types (`RETAIL`)
 | Variable | Meaning |
 |---|---|
 | `VITE_API_URL` | Backend base URL, no `/api` |
-| `VITE_SITE_URL` | Public site URL for canonical and Open Graph tags, default `https://shop.amsati.com` |
+| `VITE_SITE_URL` | Public site URL for canonical and Open Graph tags, default `https://shopscale.fidmap.co` |
 | `VITE_SUPPORT_EMAIL`, `VITE_WHATSAPP_NUMBER` | Shown on the Contact page when set |
 
-Not yet used (arrive with Paystack): platform and merchant Paystack keys, webhook secret, credential-encryption key.
+See STOREFRONT_AND_BILLING.md for `APP_ENCRYPTION_KEY`, `PAYSTACK_SECRET_KEY`, `PUBLIC_API_URL`, `STOREFRONT_URL`. Merchants' Paystack keys are entered in the app, not in env.

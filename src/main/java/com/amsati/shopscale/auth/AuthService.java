@@ -38,6 +38,7 @@ public class AuthService {
     private final JwtService jwt;
     private final PasswordEncoder encoder;
     private final AccessService access;
+    private final AccountService account;
     private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
 
     @Value("${app.jwt.refresh-ttl-days:30}")
@@ -64,6 +65,7 @@ public class AuthService {
         u.setFullName(r.fullName().trim());
         u.setPhone(r.phone());
         users.save(u);
+        account.sendVerification(u);
         return issue(u, null, UUID.randomUUID());
     }
 

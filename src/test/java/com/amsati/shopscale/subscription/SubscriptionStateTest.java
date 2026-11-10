@@ -68,4 +68,15 @@ class SubscriptionStateTest {
         assertEquals("SUSPENDED", st.status());
         assertFalse(st.writable());
     }
+
+    @Test
+    void unlimitedLimitsStayNullAndFiniteOnesCarryThrough() {
+        Plan p = plan();
+        p.setMaxCustomers(null);
+        p.setMaxSuppliers(50);
+        SubscriptionState st = SubscriptionState.compute(sub(SubscriptionStatus.ACTIVE, NOW.plus(Duration.ofDays(5))), p, NOW, 3);
+        assertNull(st.maxCustomers());
+        assertNull(st.maxExpenses());
+        assertEquals(50, st.maxSuppliers());
+    }
 }
