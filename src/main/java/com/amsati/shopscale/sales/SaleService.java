@@ -73,7 +73,9 @@ public class SaleService {
                               @Valid List<PayRequest> payments,
                               @Size(max = 300) String note,
                               @Size(max = 64) String clientRequestId,
-                              UUID branchId) {}
+                              UUID branchId,
+                              /** Sent only by sales recorded offline: the total the cashier saw. If prices moved, the sale is refused instead of silently changing. */
+                              BigDecimal expectedTotal) {}
 
     public record ItemDto(UUID id, UUID variantId, String productName, String variantLabel, BigDecimal quantity,
                           String unit, BigDecimal unitPrice, BigDecimal lineTotal, BigDecimal quantityRefunded) {}
@@ -198,6 +200,10 @@ public class SaleService {
         if (discount.compareTo(subtotal) > 0) throw ApiException.badRequest("The discount is more than the total of the items");
         BigDecimal extra = surcharge == null ? BigDecimal.ZERO : Money.scale(surcharge);
         BigDecimal total = subtotal.subtract(discount).add(extra);
+        if (req.expectedTotal() != null && Money.scale(req.expectedTotal()).compareTo(total) != 0) {
+            throw ApiException.conflict("The price changed since this sale was recorded offline (the device showed "
+                + Money.scale(req.expectedTotal()).toPlainString() + ", the current price is " + total.toPlainString() + "). Check it and record it again.");
+        }
 
         List<PayRequest> pays = req.payments() == null ? List.of() : req.payments();
         BigDecimal prepaidAmt = prepaid == null ? BigDecimal.ZERO : Money.scale(prepaid);

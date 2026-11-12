@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface SubscriptionPaymentRepository extends JpaRepository<SubscriptionPayment, UUID> {
     Optional<SubscriptionPayment> findByReference(String reference);
+    Optional<SubscriptionPayment> findByPaystackTransaction(String paystackTransaction);
     List<SubscriptionPayment> findTop50ByBusinessIdOrderByCreatedAtDesc(UUID businessId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

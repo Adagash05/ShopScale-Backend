@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface ProductModifierGroupRepository extends JpaRepository<ProductModifierGroup, ProductModifierGroup.Key> {
     List<ProductModifierGroup> findByProductId(UUID productId);
+    List<ProductModifierGroup> findByProductIdIn(java.util.Collection<UUID> productIds);
 
     @Modifying
     @Query("delete from ProductModifierGroup l where l.productId = :p")

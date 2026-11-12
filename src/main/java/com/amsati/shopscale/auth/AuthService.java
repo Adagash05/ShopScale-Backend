@@ -79,29 +79,78 @@ public class AuthService {
         return issue(u, m, UUID.randomUUID());
     }
 
-    /** Rotates the refresh token and keeps the business the session was using. Re-use of a spent token revokes the family. */
+    /** Seconds in which a just-rotated token may be presented again (a second tab, or a response lost on a weak network). */
+    private static final long RETRY_GRACE_SECONDS = 120;
+
+    /**
+     * Rotates the refresh token and keeps the business the session was using.
+     * A spent token presented again after the grace window means it may have been copied: the whole sign-in is revoked.
+     * Within the window it is treated as a benign retry: the sign-in's other live token is retired and a fresh one issued.
+     */
     @Transactional(noRollbackFor = ApiException.class)
     public AuthResponse refresh(String raw) {
         RefreshToken t = refreshTokens.findByTokenHash(TokenHash.sha256(raw))
             .orElseThrow(() -> ApiException.unauthorized("Your session has ended. Sign in again."));
         Instant now = Instant.now();
         if (t.getRevokedAt() != null) {
-            refreshTokens.revokeFamily(t.getFamilyId(), now);
-            throw ApiException.unauthorized("Your session has ended. Sign in again.");
+            boolean benignRetry = t.getRotatedAt() != null && t.getRotatedAt().isAfter(now.minusSeconds(RETRY_GRACE_SECONDS));
+            if (!benignRetry) {
+                refreshTokens.revokeFamily(t.getFamilyId(), now);
+                throw ApiException.unauthorized("Your session has ended. Sign in again.");
+            }
+            refreshTokens.rotateActive(t.getFamilyId(), now);
         }
         if (t.getExpiresAt().isBefore(now)) throw ApiException.unauthorized("Your session has ended. Sign in again.");
         User u = users.findById(t.getUserId()).filter(User::isActive)
             .orElseThrow(() -> ApiException.unauthorized("Your session has ended. Sign in again."));
-        t.setRevokedAt(now);
+        if (t.getRevokedAt() == null) { t.setRevokedAt(now); t.setRotatedAt(now); }
         Optional<Membership> same = t.getBusinessId() == null ? Optional.empty()
             : memberships.findByUserIdAndBusinessIdAndActiveTrue(u.getId(), t.getBusinessId());
         Membership m = same.or(() -> memberships.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(u.getId())).orElse(null);
-        return issue(u, m, t.getFamilyId());
+        return issue(u, m, t.getFamilyId(), t.getSessionStartedAt());
     }
 
     @Transactional
     public void logout(String raw) {
+        if (raw == null || raw.isBlank()) return;
         refreshTokens.findByTokenHash(TokenHash.sha256(raw)).ifPresent(t -> refreshTokens.revokeFamily(t.getFamilyId(), Instant.now()));
+    }
+
+    public record SessionDto(UUID id, String device, Instant signedInAt, Instant lastUsedAt, boolean current) {}
+
+    /** The devices this person is signed in on. currentRaw is the caller's own refresh token (to mark "this device"). */
+    @Transactional(readOnly = true)
+    public List<SessionDto> sessions(String currentRaw) {
+        UUID mine = currentRaw == null ? null : refreshTokens.findByTokenHash(TokenHash.sha256(currentRaw)).map(RefreshToken::getFamilyId).orElse(null);
+        return refreshTokens.findByUserIdAndRevokedAtIsNullAndExpiresAtAfterOrderByCreatedAtDesc(Tenant.userId(), Instant.now()).stream()
+            .map(t -> new SessionDto(t.getFamilyId(), deviceLabel(t.getUserAgent()), t.getSessionStartedAt() == null ? t.getCreatedAt() : t.getSessionStartedAt(),
+                t.getCreatedAt(), t.getFamilyId().equals(mine)))
+            .toList();
+    }
+
+    @Transactional
+    public void revokeSession(UUID familyId) { refreshTokens.revokeFamilyForUser(familyId, Tenant.userId(), Instant.now()); }
+
+    @Transactional
+    public void revokeAllSessions() { refreshTokens.revokeAllForUser(Tenant.userId(), Instant.now()); }
+
+    static String deviceLabel(String ua) {
+        if (ua == null || ua.isBlank()) return "Unknown device";
+        String u = ua.toLowerCase();
+        String browser = u.contains("edg/") ? "Edge" : u.contains("opr/") || u.contains("opera") ? "Opera" : u.contains("chrome") || u.contains("crios") ? "Chrome"
+            : u.contains("firefox") || u.contains("fxios") ? "Firefox" : u.contains("safari") ? "Safari" : "Browser";
+        String os = u.contains("android") ? "Android" : u.contains("iphone") || u.contains("ipad") ? "iOS" : u.contains("windows") ? "Windows"
+            : u.contains("mac os") ? "macOS" : u.contains("linux") ? "Linux" : "";
+        return os.isEmpty() ? browser : browser + " on " + os;
+    }
+
+    private static String currentUserAgent() {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()
+            instanceof org.springframework.web.context.request.ServletRequestAttributes a) {
+            String ua = a.getRequest().getHeader("User-Agent");
+            return ua == null ? null : ua.substring(0, Math.min(ua.length(), 255));
+        }
+        return null;
     }
 
     /** Current user, business, role and permissions for the signed-in session. */
@@ -134,7 +183,9 @@ public class AuthService {
     }
 
     /** Builds tokens for a user in the given membership context (or none, before onboarding). */
-    public AuthResponse issue(User u, Membership m, UUID familyId) {
+    public AuthResponse issue(User u, Membership m, UUID familyId) { return issue(u, m, familyId, null); }
+
+    public AuthResponse issue(User u, Membership m, UUID familyId, Instant sessionStartedAt) {
         AuthPrincipal principal = new AuthPrincipal(u.getId(), u.getEmail(),
             m == null ? null : m.getBusinessId(), m == null ? null : m.getRole());
         String accessToken = jwt.createAccessToken(principal);
@@ -145,6 +196,8 @@ public class AuthService {
         rt.setBusinessId(m == null ? null : m.getBusinessId());
         rt.setTokenHash(TokenHash.sha256(rawRefresh));
         rt.setExpiresAt(Instant.now().plus(Duration.ofDays(refreshTtlDays)));
+        rt.setUserAgent(currentUserAgent());
+        rt.setSessionStartedAt(sessionStartedAt == null ? Instant.now() : sessionStartedAt);
         refreshTokens.save(rt);
         if (m != null) m.setLastActiveAt(Instant.now());
         return build(u, m, accessToken, rawRefresh);

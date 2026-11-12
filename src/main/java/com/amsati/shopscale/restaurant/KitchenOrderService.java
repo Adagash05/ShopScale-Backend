@@ -262,10 +262,26 @@ public class KitchenOrderService {
             surcharge = surcharge.add(i.getModifiersTotal().multiply(i.getQuantity()));
         }
         SaleService.SaleRequest req = new SaleService.SaleRequest(
-            qty.entrySet().stream().map(e -> new SaleService.ItemRequest(e.getKey(), e.getValue(), null)).toList(),
-            r.discount() == null ? BigDecimal.ZERO : r.discount(), r.customerId(), r.payments(),
-            "Order #" + o.getNumber() + (o.getTableId() == null ? "" : " · table"), "ko-" + o.getId(), o.getBranchId());
-        SaleService.SaleDto sale = saleService.createInternal(req, "RESTAURANT", null, null, false, surcharge);
+                qty.entrySet().stream()
+                        .map(e -> new SaleService.ItemRequest(e.getKey(), e.getValue(), null))
+                        .toList(),
+                r.discount() == null ? BigDecimal.ZERO : r.discount(),
+                r.customerId(),
+                r.payments(),
+                "Order #" + o.getNumber() + (o.getTableId() == null ? "" : " · table"),
+                "ko-" + o.getId(),
+                o.getBranchId(),
+                null
+        );
+
+        SaleService.SaleDto sale = saleService.createInternal(
+                req,
+                "RESTAURANT",
+                null,
+                null,
+                false,
+                surcharge
+        );
 
         // Ingredients used by chosen modifiers (for example extra cheese) come out of stock too, and count as cost.
         Map<UUID, BigDecimal> extraUse = new LinkedHashMap<>();

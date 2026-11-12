@@ -22,6 +22,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
     java.util.List<DayTotal> daily(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
     Optional<Expense> findByIdAndBusinessId(UUID id, UUID businessId);
+    Optional<Expense> findByBusinessIdAndClientRequestId(UUID businessId, String clientRequestId);
 
     @Query("select e from Expense e where e.businessId = :b and e.expenseDate >= :from and e.expenseDate <= :to "
         + "order by e.expenseDate desc, e.createdAt desc")

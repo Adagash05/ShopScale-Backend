@@ -25,8 +25,9 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     /**
-     * CSRF is disabled on purpose: the API is stateless, authenticates with a bearer token in the
-     * Authorization header and sets no cookies, so browsers never attach credentials automatically.
+     * CSRF protection is off on purpose: every business endpoint authenticates with a bearer token in the Authorization
+     * header, which browsers never attach on their own. The only cookie is the HttpOnly refresh cookie (path /api/auth,
+     * SameSite=Strict); the two endpoints that read it (refresh, logout) require a custom header and an allowed Origin.
      */
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService) throws Exception {
@@ -57,7 +58,8 @@ public class SecurityConfig {
         CorsConfiguration c = new CorsConfiguration();
         c.setAllowedOrigins(Arrays.stream(origins.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList());
         c.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        c.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        c.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-ShopScale-Client"));
+        c.setAllowCredentials(true);   // the refresh cookie; origins are an explicit list, never "*"
         c.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         // The public storefront is called from merchants' own domains too. No cookies or credentials are involved.
@@ -68,6 +70,7 @@ public class SecurityConfig {
         open.setAllowCredentials(false);
         open.setMaxAge(3600L);
         src.registerCorsConfiguration("/api/public/**", open);
+        src.registerCorsConfiguration("/api/subscriptions/plans", open);   // the marketing site's pricing page reads the plan list
         src.registerCorsConfiguration("/api/**", c);
         return src;
     }

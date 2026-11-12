@@ -31,5 +31,11 @@ public class StoreSettings {
     private String customDomain;
     private String domainToken;
     private boolean domainVerified;
+    private String logoType;
+    private String instagramUrl;
+    private String facebookUrl;
+    private String xUrl;
+    private String tiktokUrl;
+    private String openingHours;
     private Instant updatedAt = Instant.now();
 }

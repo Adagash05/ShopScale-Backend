@@ -18,6 +18,8 @@ public class Product {
     private String name;
     private String description;
     private String imageUrl;
+    /** One "Label: value" per line, shown on the product page in the online store. */
+    private String specs;
     private String kind = "GOODS";
     @Enumerated(EnumType.STRING)
     private ProductStatus status = ProductStatus.ACTIVE;

@@ -22,7 +22,10 @@ class PermissionAnnotationsTest {
     private static final Pattern NAME = Pattern.compile("has\\('([A-Z_]+)'\\)");
     private static final List<String> PUBLIC_HANDLERS = List.of(
         "AuthController.register", "AuthController.login", "AuthController.refresh", "AuthController.logout",
-        "SubscriptionController.plans", "TeamController.preview", "TeamController.accept");
+        "SubscriptionController.plans", "TeamController.preview", "TeamController.accept",
+        "BillingController.webhook", "StoreWebhookController.receive", "ProductImageController.serve", "UnitController.common", "BranchController.list",
+        "StoreExtrasController.logo", "StoreExtrasController.reviews", "StoreExtrasController.testimonials", "StoreExtrasController.review",
+        "StoreExtrasController.subscribe", "StoreExtrasController.enquire", "StoreExtrasController.lookup");
 
     private static List<Class<?>> controllers() throws Exception {
         var scanner = new ClassPathScanningCandidateComponentProvider(false);
@@ -64,7 +67,9 @@ class PermissionAnnotationsTest {
                 if (!annotated) {
                     boolean allowed = PUBLIC_HANDLERS.contains(id)
                         || c.getSimpleName().equals("BusinessController") || id.startsWith("SubscriptionController")
-                        || id.startsWith("AuthController");   // identity endpoints: authenticated by the filter chain
+                        || id.startsWith("AuthController")
+                        || c.getSimpleName().equals("PublicStoreController") || c.getSimpleName().equals("PublicInvoiceController")
+                        || c.getSimpleName().equals("NotificationController");   // public by design / scoped to the signed-in user in the service   // identity endpoints: authenticated by the filter chain
                     assertTrue(allowed, id + " has no @PreAuthorize and is not on the reviewed list of open endpoints");
                 }
             }

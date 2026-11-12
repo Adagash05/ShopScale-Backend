@@ -36,6 +36,10 @@ public enum Permission {
     SALES_REFUND("Sales and POS", "Refund sales"),
     SALES_HISTORY_VIEW("Sales and POS", "View own sales history"),
     RECEIPTS_GENERATE("Sales and POS", "Print receipts"),
+    // Invoices
+    CUSTOMER_INVOICES_VIEW("Customer invoices", "View customer invoices"),
+    CUSTOMER_INVOICES_MANAGE("Customer invoices", "Create, edit, send and cancel customer invoices"),
+    CUSTOMER_INVOICES_PAYMENT_RECORD("Customer invoices", "Record payments on customer invoices"),
     // Customers
     CUSTOMERS_VIEW("Customers", "View customers"),
     CUSTOMERS_CREATE("Customers", "Add customers"),

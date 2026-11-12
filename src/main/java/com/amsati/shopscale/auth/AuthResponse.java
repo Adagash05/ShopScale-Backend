@@ -10,5 +10,9 @@ public record AuthResponse(String accessToken, String refreshToken, long expires
                            BusinessDto business, Role role, String roleName, List<String> permissions,
                            List<String> features, List<String> workflows, String planCode, String subscriptionStatus) {
 
+    public AuthResponse withoutRefreshToken() {
+        return new AuthResponse(accessToken, null, expiresIn, user, business, role, roleName, permissions, features, workflows, planCode, subscriptionStatus);
+    }
+
     public record UserDto(UUID id, String email, String fullName, String phone) {}
 }

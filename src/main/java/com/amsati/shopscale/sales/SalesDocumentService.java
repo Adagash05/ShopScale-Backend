@@ -176,9 +176,26 @@ public class SalesDocumentService {
         // Honour the quoted total: if prices have gone up since, the gap is given as a discount. If they went down, today's lower price applies.
         BigDecimal discount = Money.scale(current).subtract(d.getTotal()).max(BigDecimal.ZERO);
         String requestId = r != null && r.clientRequestId() != null && !r.clientRequestId().isBlank() ? r.clientRequestId() : "DOC-" + d.getId();
-        SaleService.SaleDto sale = saleService.createInternal(new SaleService.SaleRequest(items, discount, d.getCustomerId(),
-            r == null ? null : r.payments(), "From " + ("ORDER".equals(d.getKind()) ? "order #" : "quotation #") + d.getDocNumber(), requestId, d.getBranchId()),
-            "ORDER".equals(d.getKind()) ? "ORDER" : "POS", d.getDepositAmount(), d.getDepositMethod() == null ? null : PaymentMethod.valueOf(d.getDepositMethod()), true);
+        SaleService.SaleDto sale = saleService.createInternal(
+                new SaleService.SaleRequest(
+                        items,
+                        discount,
+                        d.getCustomerId(),
+                        r == null ? null : r.payments(),
+                        "From " + ("ORDER".equals(d.getKind()) ? "order #" : "quotation #")
+                                + d.getDocNumber(),
+                        requestId,
+                        d.getBranchId(),
+                        null
+                ),
+                "ORDER".equals(d.getKind()) ? "ORDER" : "POS",
+                d.getDepositAmount(),
+                d.getDepositMethod() == null
+                        ? null
+                        : PaymentMethod.valueOf(d.getDepositMethod()),
+                true
+        );
+
         d.setStatus("CONVERTED");
         d.setSaleId(sale.id());
         audit.record(bid, Tenant.userId(), "DOCUMENT_CONVERTED", "sales_document", id, "#" + d.getDocNumber() + " -> sale " + sale.saleNumber());

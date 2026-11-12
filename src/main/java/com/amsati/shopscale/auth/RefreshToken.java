@@ -19,5 +19,8 @@ public class RefreshToken {
     private UUID businessId;
     private Instant expiresAt;
     private Instant revokedAt;
+    private Instant rotatedAt;
+    private String userAgent;
+    private Instant sessionStartedAt;
     private Instant createdAt = Instant.now();
 }

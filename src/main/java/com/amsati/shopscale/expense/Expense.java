@@ -29,5 +29,6 @@ public class Expense {
     private UUID decidedBy;
     private Instant decidedAt;
     private String decisionNote;
+    private String clientRequestId;
     private Instant createdAt = Instant.now();
 }

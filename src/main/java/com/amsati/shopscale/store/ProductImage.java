@@ -18,6 +18,8 @@ public class ProductImage {
     private UUID productId;
     private String contentType;
     private int sizeBytes;
+    private boolean gallery;
+    private int position;
     @Basic(fetch = FetchType.LAZY)
     private byte[] data;
     private Instant createdAt = Instant.now();

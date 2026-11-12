@@ -28,12 +28,20 @@ public class BillingController {
     @GetMapping("/api/subscriptions/payments") @PreAuthorize("@access.has('SUBSCRIPTION_VIEW')")
     public List<PaymentDto> history() { return billing.history(); }
 
+    /** Automatic-renewal state, saved payment method (brand and last four digits only), last renewal attempt. */
+    @GetMapping("/api/subscriptions/billing") @PreAuthorize("@access.has('SUBSCRIPTION_VIEW')")
+    public Overview overview() { return billing.overview(); }
+
+    /** Turn automatic renewal off, or on again with consent (also resumes a cancelled plan that is still inside its paid period). */
+    @PostMapping("/api/subscriptions/auto-renew") @PreAuthorize("@access.has('SUBSCRIPTION_MANAGE')")
+    public SubscriptionService.Result autoRenew(@RequestBody Map<String, Boolean> body) { return billing.setAutoRenew(Boolean.TRUE.equals(body.get("enabled")), Boolean.TRUE.equals(body.get("consent"))); }
+
     @PostMapping("/api/subscriptions/cancel") @PreAuthorize("@access.has('SUBSCRIPTION_MANAGE')")
     public SubscriptionService.Result cancel() { return billing.cancel(); }
 
     /** Called by the AMSATI Paystack account. The signature is checked against our platform secret key. */
     @PostMapping("/api/webhooks/paystack/subscriptions")
-    public ResponseEntity<String> webhook(@RequestBody String body, @RequestHeader(value = "x-paystack-signature", required = false) String sig) {
+    public ResponseEntity<String> webhook(@RequestBody byte[] body, @RequestHeader(value = "x-paystack-signature", required = false) String sig) {
         billing.webhook(body, sig);
         return ResponseEntity.ok("ok");
     }

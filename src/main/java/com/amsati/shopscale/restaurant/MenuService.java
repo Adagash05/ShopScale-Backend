@@ -7,6 +7,9 @@ import com.amsati.shopscale.catalog.ProductRepository;
 import com.amsati.shopscale.common.ApiException;
 import com.amsati.shopscale.common.Money;
 import com.amsati.shopscale.industry.IndustryGuard;
+import com.amsati.shopscale.inventory.MovementType;
+import com.amsati.shopscale.inventory.StockService;
+import com.amsati.shopscale.sales.SaleRepository;
 import com.amsati.shopscale.industry.Workflow;
 import com.amsati.shopscale.security.Tenant;
 import com.amsati.shopscale.subscription.SubscriptionService;
@@ -31,6 +34,8 @@ public class MenuService {
     private final IndustryGuard industry;
     private final SubscriptionService subscriptions;
     private final AuditService audit;
+    private final StockService stock;
+    private final SaleRepository saleRepo;
 
     public record GroupRequest(@NotBlank @Size(max = 80) String name, boolean required, @Min(1) @Max(20) int maxSelect) {}
     public record ModifierRequest(@NotBlank @Size(max = 80) String name, @NotNull @DecimalMin("0") BigDecimal priceDelta,
@@ -137,6 +142,22 @@ public class MenuService {
         for (UUID g : ids) links.save(new ProductModifierGroup(productId, g));
         audit.record(bid, Tenant.userId(), "MENU_ITEM_MODIFIERS_SET", "product", productId, ids.size() + " groups");
         return new ArrayList<>(ids);
+    }
+
+    /** Online orders: ingredients used by chosen paid options leave stock and count as cost of that sale. Runs inside the sale's business context. */
+    @Transactional
+    public void applyOptionIngredients(UUID bid, UUID branchId, Map<UUID, BigDecimal> use, UUID saleId, long saleNumber) {
+        if (use.isEmpty()) return;
+        Map<UUID, ProductVariant> locked = variants.lockAll(bid, use.keySet()).stream().collect(Collectors.toMap(ProductVariant::getId, v -> v));
+        BigDecimal cost = BigDecimal.ZERO;
+        for (Map.Entry<UUID, BigDecimal> e : use.entrySet()) {
+            ProductVariant v = locked.get(e.getKey());
+            if (v == null) continue;
+            stock.apply(v, branchId, MovementType.SALE, e.getValue().negate(), "Menu option", "SALE-" + saleNumber, Tenant.userId(), true);
+            cost = cost.add(v.getCost().multiply(e.getValue()));
+        }
+        BigDecimal add = Money.scale(cost);
+        saleRepo.findById(saleId).ifPresent(s -> s.setCostTotal((s.getCostTotal() == null ? BigDecimal.ZERO : s.getCostTotal()).add(add)));
     }
 
     // ----- tables -----

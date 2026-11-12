@@ -2,10 +2,10 @@
 
 Spring Boot 3.3 · Java 21 · PostgreSQL · Flyway · JWT. An AMSATI product, built independently of any other project.
 
-> **Verification status (read this first):** the authoring environment could not reach Maven Central, so this
-> backend has **not been compiled and its tests have not been run**. Every Java file was syntax-checked with a
-> real Java parser and every project import was checked to resolve, but type errors can still exist.
-> Run `mvn -B verify` first and send me the output of anything that fails. See `docs/STATUS.md`.
+> **Start with `docs/SHOPScale_V1_OWNER_GUIDE.md`** - the owner's guide to what exists, how to configure, deploy and operate it.
+>
+> **Verification status:** Migrations V1-V15 were applied to a clean PostgreSQL 16. The Maven build and tests have **not** been run
+> (no network where this was authored). Run `mvn -B verify` first. See `docs/IMPLEMENTATION_PROGRESS.md`.
 
 ## Run locally
 ```bash
@@ -16,7 +16,7 @@ mvn spring-boot:run             # Flyway creates the schema on first start
 ```
 API docs: http://localhost:8080/swagger-ui.html · Health: `/actuator/health`
 
-Tests: `mvn -B verify` (unit tests only; no database needed). Eight JUnit test classes exist; none has been run yet.
+Tests: `mvn -B verify` (unit tests only; no database needed). JUnit test classes exist; they have not been run yet.
 
 ## Configuration (environment variables)
 | Variable | Required | Meaning |
@@ -26,13 +26,19 @@ Tests: `mvn -B verify` (unit tests only; no database needed). Eight JUnit test c
 | `CORS_ALLOWED_ORIGINS` | no | Comma-separated frontend origins (default `http://localhost:5173`) |
 | `PORT` | no | Default 8080 |
 
-Business rules live in `application.yml` under `app.*`: enabled business types (`RETAIL` only for now), trial plan
+Business rules live in `application.yml` under `app.*`: enabled business types, trial plan
 (`BUSINESS`), trial days (14), grace days (3). Plan prices, limits and features live in the `plans` and
-`plan_features` tables (seeded by `V2__seed_plans.sql`), never in code.
+`plan_features` tables (seeded by `V2__seed_plans.sql`, current values set by `V15__final_pricing_limits_features.sql`), never in code.
 
 ## Layout
-`auth` · `business` (tenant + onboarding) · `subscription` (plans, state, enforcement) · `catalog` (products, variants,
-categories) · `inventory` (stock movements) · `customer` · `sales` (atomic POS) · `expense` · `dashboard` · `audit` ·
-`security` · `common`. Controllers hold no business logic.
+`auth` · `business` · `subscription` (plans, state, billing) · `store` (online store) · `payment` (Paystack client) · `catalog` · `inventory` · `branch` · `transfer` · `customer` · `pricing` · `sales` · `purchasing` · `expense` · `finance` · `dashboard` · `insight` · `notification` · `audit` · `exportdata` · `team` · `security` · `common`. Deferred (no UI): `recipe`, `restaurant`, `wastage`.
 
-Read `docs/SHOPScale_IMPLEMENTATION_STATUS.md` first, then `docs/SHOPScale_TEST_REPORT.md`, `docs/SHOPScale_KNOWN_LIMITATIONS.md`, `docs/SHOPScale_ARCHITECTURE_REPORT.md`, `docs/FINANCE.md`, `docs/SHOPScale_DEPLOYMENT_GUIDE.md` and `docs/SHOPScale_ENVIRONMENT_VARIABLES.md`.
+## Documents
+| File | What |
+|---|---|
+| `docs/SHOPScale_V1_OWNER_GUIDE.md` | **Primary reference** |
+| `docs/IMPLEMENTATION_PROGRESS.md` | Status, verification, deferred work |
+| `docs/STOREFRONT_AND_BILLING.md` | Paystack flows and variables |
+| `docs/SHOPScale_ENVIRONMENT_VARIABLES.md`, `docs/SHOPScale_DEPLOYMENT_GUIDE.md` | Configuration and deployment |
+| Frontend `docs/GA4_SETUP.md` | Google Analytics setup |
+(Older `STATUS.md`, `SHOPScale_IMPLEMENTATION_STATUS.md`, `SHOPScale_TEST_REPORT.md` are superseded stubs.)

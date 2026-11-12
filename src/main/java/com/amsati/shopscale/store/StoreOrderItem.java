@@ -21,4 +21,6 @@ public class StoreOrderItem {
     private BigDecimal quantity;
     private BigDecimal unitPrice;
     private BigDecimal lineTotal;
+    /** Per-unit total of paid options chosen on this line; already included in unitPrice. */
+    private BigDecimal optionsTotal = BigDecimal.ZERO;
 }

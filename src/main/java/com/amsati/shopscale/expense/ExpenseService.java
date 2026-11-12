@@ -37,7 +37,8 @@ public class ExpenseService {
                                  @NotNull @DecimalMin(value = "0.01", message = "Enter an amount above zero") BigDecimal amount,
                                  LocalDate expenseDate,
                                  @Size(max = 300) String description,
-                                 @NotNull PaymentMethod paymentMethod) {}
+                                 @NotNull PaymentMethod paymentMethod,
+                                 @Size(max = 64) String clientRequestId) {}
 
     public record ExpenseDto(UUID id, String category, BigDecimal amount, LocalDate expenseDate, String description,
                              PaymentMethod paymentMethod, String status, String decisionNote) {}
@@ -53,6 +54,11 @@ public class ExpenseService {
     @Transactional
     public ExpenseDto create(ExpenseRequest r) {
         UUID bid = Tenant.businessId();
+        // A retry of an expense saved on a device (lost response, double sync) returns the one already recorded.
+        if (r.clientRequestId() != null && !r.clientRequestId().isBlank()) {
+            var existing = expenses.findByBusinessIdAndClientRequestId(bid, r.clientRequestId());
+            if (existing.isPresent()) return dto(existing.get());
+        }
         subscriptions.requireExpenseCapacity(bid, expenses.countByBusinessId(bid) + 1);
         Business b = businesses.findById(bid).orElseThrow();
         Expense e = new Expense();
@@ -63,6 +69,7 @@ public class ExpenseService {
         e.setDescription(r.description());
         e.setPaymentMethod(r.paymentMethod());
         e.setCreatedBy(Tenant.userId());
+        e.setClientRequestId(r.clientRequestId() == null || r.clientRequestId().isBlank() ? null : r.clientRequestId());
         // Larger expenses from people who cannot approve them wait for approval and do not touch the books until approved.
         BigDecimal limit = b.getExpenseApprovalThreshold();
         boolean needsApproval = limit != null && e.getAmount().compareTo(limit) >= 0 && !access.current().contains(com.amsati.shopscale.security.Permission.EXPENSES_APPROVE);

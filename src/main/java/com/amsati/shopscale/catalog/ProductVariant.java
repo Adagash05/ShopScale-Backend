@@ -23,6 +23,8 @@ public class ProductVariant {
     private String barcode;
     private BigDecimal price;
     private BigDecimal cost = BigDecimal.ZERO;
+    /** Shown as the struck-through "was" price in the online store while higher than price. Never used to charge. */
+    private BigDecimal compareAtPrice;
     private BigDecimal quantity = BigDecimal.ZERO;
     private BigDecimal lowStockThreshold = BigDecimal.valueOf(5);
     private String unit = "piece";

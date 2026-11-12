@@ -21,6 +21,11 @@ public class Subscription {
     private SubscriptionStatus status;
     private Instant currentPeriodStart;
     private Instant currentPeriodEnd;
+    private boolean autoRenew;
+    /** Start of the current chain of paid periods; renewals keep its day-of-month. */
+    private Instant billingAnchor;
+    private Instant cancelledAt;
+    private Instant autoRenewConsentAt;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();
 }

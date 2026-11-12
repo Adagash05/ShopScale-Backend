@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 public interface StoreOrderRepository extends JpaRepository<StoreOrder, UUID> {
     Optional<StoreOrder> findByIdAndBusinessId(UUID id, UUID businessId);
     Optional<StoreOrder> findByPublicToken(String token);
+    Optional<StoreOrder> findByBusinessIdAndNumber(UUID businessId, long number);
     Optional<StoreOrder> findByPaystackReference(String reference);
     List<StoreOrder> findTop100ByBusinessIdOrderByCreatedAtDesc(UUID businessId);
     List<StoreOrder> findTop100ByBusinessIdAndStatusOrderByCreatedAtDesc(UUID businessId, String status);

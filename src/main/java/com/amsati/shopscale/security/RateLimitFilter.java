@@ -21,7 +21,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest req) {
         String p = req.getRequestURI();
         return !(p.equals("/api/auth/login") || p.equals("/api/auth/register") || p.equals("/api/auth/refresh") || p.equals("/api/auth/forgot-password") || p.equals("/api/auth/reset-password") || p.equals("/api/auth/verify-email")
-            || (p.startsWith("/api/public/store/") && p.endsWith("/orders") && req.getMethod().equals("POST")) || (p.startsWith("/api/public/orders/") && req.getMethod().equals("POST")) || p.equals("/api/team/invitations/accept") || p.equals("/api/team/invitations/preview"));
+            || (p.startsWith("/api/public/store/") && req.getMethod().equals("POST")) || (p.startsWith("/api/public/orders/") && req.getMethod().equals("POST")) || p.equals("/api/team/invitations/accept") || p.equals("/api/team/invitations/preview"));
     }
 
     @Override
