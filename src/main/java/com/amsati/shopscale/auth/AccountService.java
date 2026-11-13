@@ -4,6 +4,7 @@ import com.amsati.shopscale.common.ApiException;
 import com.amsati.shopscale.security.Tenant;
 import com.amsati.shopscale.security.TokenHash;
 import com.amsati.shopscale.team.EmailService;
+import com.amsati.shopscale.team.EmailTemplates;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -39,7 +40,12 @@ public class AccountService {
 
     private String base() { return frontendUrl.replaceAll("/+$", ""); }
 
+    /** A confirmation email requested again within this time is not sent twice: the earlier one is still on its way. */
+    static final Duration VERIFY_COOLDOWN = Duration.ofSeconds(60);
+
+    /** Locks the user row (so simultaneous requests queue briefly rather than contend on auth_tokens), retires open tokens, stores a new hash. */
     private String issue(UUID userId, String kind, Duration ttl) {
+        users.lockById(userId);
         tokens.invalidateOpen(userId, kind, Instant.now());
         byte[] b = new byte[32];
         RNG.nextBytes(b);
@@ -57,7 +63,8 @@ public class AccountService {
         AuthToken t = tokens.findByTokenHashAndKind(TokenHash.sha256(raw), kind)
             .orElseThrow(() -> ApiException.badRequest("This link is not valid. Ask for a new one."));
         if (t.getUsedAt() != null || t.getExpiresAt().isBefore(Instant.now())) throw ApiException.badRequest("This link has expired. Ask for a new one.");
-        t.setUsedAt(Instant.now());
+        // Atomic: of two simultaneous requests with the same link, exactly one wins.
+        if (tokens.consume(t.getId(), Instant.now()) != 1) throw ApiException.badRequest("This link has expired. Ask for a new one.");
         return t;
     }
 
@@ -66,9 +73,8 @@ public class AccountService {
     public void forgotPassword(ForgotRequest r) {
         users.findByEmail(r.email().trim().toLowerCase()).filter(User::isActive).ifPresent(u -> {
             String raw = issue(u.getId(), "RESET", Duration.ofHours(1));
-            email.send(u.getEmail(), "Reset your ShopScale password",
-                "Hello " + u.getFullName() + ",\n\nUse this link within one hour to choose a new password:\n" + base() + "/reset-password?token=" + raw
-                    + "\n\nIf you did not ask for this, ignore this email; your password has not changed.");
+            var m = EmailTemplates.passwordReset(u.getFullName(), base() + "/reset-password?token=" + raw);
+            email.sendAfterCommit(u.getEmail(), m.subject(), m.text(), m.html());
         });
     }
 
@@ -81,12 +87,15 @@ public class AccountService {
         refreshTokens.revokeAllForUser(u.getId(), Instant.now());
     }
 
+    /** Issues a confirmation link and queues the email for after the commit. Safe to call inside the registration transaction. */
     @Transactional
     public void sendVerification(User u) {
         if (u.isEmailVerified()) return;
+        users.lockById(u.getId());
+        if (tokens.existsByUserIdAndKindAndUsedAtIsNullAndCreatedAtAfter(u.getId(), "VERIFY", Instant.now().minus(VERIFY_COOLDOWN))) return;
         String raw = issue(u.getId(), "VERIFY", Duration.ofDays(3));
-        email.send(u.getEmail(), "Confirm your ShopScale email",
-            "Hello " + u.getFullName() + ",\n\nConfirm your email address with this link:\n" + base() + "/verify-email?token=" + raw);
+        var m = EmailTemplates.verification(u.getFullName(), base() + "/verify-email?token=" + raw);
+        email.sendAfterCommit(u.getEmail(), m.subject(), m.text(), m.html());
     }
 
     @Transactional

@@ -19,6 +19,19 @@ spring:
     enabled: true
   jackson:
     default-property-inclusion: non_null
+  mail:
+    # Host, port, username and password come from SPRING_MAIL_* (Resend: smtp.resend.com, 587, "resend", API key).
+    # Timeouts stop a slow or unreachable provider from holding a worker thread for minutes.
+    # Defaults suit Resend on port 587; the SPRING_MAIL_PROPERTIES_MAIL_SMTP_* variables still override them.
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 10000
+          writetimeout: 10000
 server:
   port: ${PORT:8080}
   forward-headers-strategy: native

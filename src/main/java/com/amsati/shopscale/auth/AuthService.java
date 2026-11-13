@@ -64,7 +64,11 @@ public class AuthService {
         u.setPasswordHash(encoder.encode(r.password()));
         u.setFullName(r.fullName().trim());
         u.setPhone(r.phone());
-        users.save(u);
+        try {
+            users.saveAndFlush(u);   // the unique index on email is the real guard against two simultaneous sign-ups
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw ApiException.conflict("An account with this email already exists");
+        }
         account.sendVerification(u);
         return issue(u, null, UUID.randomUUID());
     }

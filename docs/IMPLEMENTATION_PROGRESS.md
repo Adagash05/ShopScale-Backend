@@ -74,3 +74,6 @@ Next: run the networked checks listed in `docs/STOREFRONT.md` section 8.
 Full report: `docs/STOREFRONT.md` section 9. Added: logo, social links, opening hours, sale prices, extra photos, specifications, verified-purchase reviews with moderation, newsletter, catering enquiries, order lookup by phone + number, and restaurant menu options (server priced, stock and cost handled). Migration V20; new `StoreExtrasService/Controller`; merchant pages Store inbox, store profile panel, product "Online store details".
 Run: store-verify 17/17; storefront journeys 90/90 + 56/56 on a mock API (desktop + mobile); backend parse check only (267 files). NOT run: mvn, vitest, vite build, the V20 migration, real Paystack, merchant dashboard screens (written, never rendered).
 Next: `mvn test`, apply V20 on a copy of real data, place a real option order and check the sale total, ingredient stock and cost.
+
+## K. Registration, Resend and light default (2026-11-12)
+See `docs/EMAIL_AND_REGISTRATION.md`. Verified in the build sandbox: migrations V1-V22 on PostgreSQL 16, the lock-timeout reproduction and fix, atomic token consumption, the real `EmailService` retry/after-commit/non-blocking logic (run against stand-in mail classes), and the theme and storefront Node tests. NOT run here: `mvn test`, `vitest`, `vite build`, a real Resend send.
