@@ -77,3 +77,6 @@ Next: `mvn test`, apply V20 on a copy of real data, place a real option order an
 
 ## K. Registration, Resend and light default (2026-11-12)
 See `docs/EMAIL_AND_REGISTRATION.md`. Verified in the build sandbox: migrations V1-V22 on PostgreSQL 16, the lock-timeout reproduction and fix, atomic token consumption, the real `EmailService` retry/after-commit/non-blocking logic (run against stand-in mail classes), and the theme and storefront Node tests. NOT run here: `mvn test`, `vitest`, `vite build`, a real Resend send.
+
+## ShopScale Partners (affiliate programme), Nov 13 2026
+Implemented end to end: applications and approval, referral links with click tracking and last-referral attribution, a commission ledger (earned only from verified payments, held, reserved, paid, reversed), refund/chargeback reversal, bank details (encrypted), withdrawals with an admin workflow and manual-transfer records, admin settings, reports, CSV export and partner resources, a public landing page with a real-price calculator, and notification emails. Migration `V23__partners.sql`. Full description, rules, endpoints, setup checklist, limits and verification status: `docs/PARTNERS.md`.

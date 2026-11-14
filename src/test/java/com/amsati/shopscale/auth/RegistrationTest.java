@@ -21,7 +21,7 @@ class RegistrationTest {
     AccountService account = mock(AccountService.class);
     PasswordEncoder encoder = mock(PasswordEncoder.class);
     AuthService svc = new AuthService(users, mock(RefreshTokenRepository.class), mock(MembershipRepository.class), mock(BusinessRepository.class),
-        mock(JwtService.class), encoder, mock(AccessService.class), account, mock(SubscriptionService.class));
+        mock(JwtService.class), encoder, mock(AccessService.class), account, mock(SubscriptionService.class), mock(com.amsati.shopscale.partners.AttributionService.class));
     static final Validator V = Validation.buildDefaultValidatorFactory().getValidator();
 
     private AuthService.RegisterRequest req(String email, String pw, String name) { return new AuthService.RegisterRequest(email, pw, name, null); }

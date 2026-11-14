@@ -51,6 +51,7 @@ public class BillingService {
     private final BillingAuthorizationRepository authorizations;
     private final SubscriptionRenewalRepository renewals;
     private final SecretBox box;
+    private final com.amsati.shopscale.partners.CommissionService affiliateCommissions;
 
     @Value("${app.paystack.secret-key:}") private String secretKey;
     @Value("${app.frontend-url:}") private String frontendUrl;
@@ -173,9 +174,38 @@ public class BillingService {
         var root = paystack.parse(rawBody);
         String event = root.path("event").asText("");
         String ref = root.path("data").path("reference").asText("");
+        if (event.equals("refund.processed") || event.equals("charge.dispute.resolve")) { partnerRefund(event, root.path("data")); return; }
         if (!event.startsWith("charge.")) return;
         payments.findByReference(ref).ifPresent(p -> {
             if (settleable(p)) settle(p.getId(), paystack.verify(secretKey, ref));
+        });
+    }
+
+    /**
+     * A refund, or a chargeback decided in the customer's favour, reverses the matching partner commission. The notice is already
+     * signature-checked. Each refund is applied once (its reference is recorded). Other dispute stages change nothing.
+     */
+    private void partnerRefund(String event, com.fasterxml.jackson.databind.JsonNode d) {
+        String ref; String refundRef; long kobo; String source;
+        if (event.equals("refund.processed")) {
+            ref = d.path("transaction_reference").asText("");
+            if (ref.isBlank()) ref = d.path("transaction").path("reference").asText("");
+            refundRef = "paystack-refund:" + d.path("id").asText(d.path("refund_reference").asText(""));
+            kobo = d.path("amount").asLong(0);
+            source = "WEBHOOK";
+        } else {
+            String resolution = d.path("resolution").asText("");
+            if (!resolution.equals("merchant-accepted") && !resolution.equals("accepted")) return;
+            ref = d.path("transaction").path("reference").asText("");
+            refundRef = "paystack-dispute:" + d.path("id").asText("");
+            kobo = d.path("refund_amount").asLong(0);
+            source = "CHARGEBACK";
+        }
+        if (ref.isBlank() || refundRef.endsWith(":")) { log.warn("Paystack {} notice without a usable reference was ignored", event); return; }
+        final String payRef = ref;
+        payments.findByReference(payRef).ifPresent(p -> {
+            java.math.BigDecimal amount = kobo > 0 ? java.math.BigDecimal.valueOf(kobo).movePointLeft(2) : p.getAmount();   // a dispute notice without an amount means the whole payment
+            affiliateCommissions.applyRefund(p.getId(), refundRef, source, amount);
         });
     }
 
@@ -261,7 +291,10 @@ public class BillingService {
             }
         });
         if (notify[0] != null) notifications.publish(notify[0], Permission.SUBSCRIPTION_VIEW, "BILLING", msg[0], msg[1], "/more/plan", "billing-" + paymentId);
-        return payments.findById(paymentId).map(SubscriptionPayment::getStatus).orElse("PENDING");
+        String after = payments.findById(paymentId).map(SubscriptionPayment::getStatus).orElse("PENDING");
+        // ShopScale Partners: once the payment is verified and committed, record the referral commission (after commit, own transaction, never throws).
+        if ("SUCCESS".equals(after)) affiliateCommissions.afterPaymentSettled(paymentId);
+        return after;
     }
 
     /** Returns a description of the first thing that does not match what we asked Paystack to charge, or null when everything matches. */

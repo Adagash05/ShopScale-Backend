@@ -40,6 +40,7 @@ public class AuthService {
     private final AccessService access;
     private final AccountService account;
     private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
+    private final com.amsati.shopscale.partners.AttributionService attribution;
 
     @Value("${app.jwt.refresh-ttl-days:30}")
     private long refreshTtlDays;
@@ -48,7 +49,11 @@ public class AuthService {
         @NotBlank @Email @Size(max = 255) String email,
         @NotBlank @Size(min = 8, max = 72, message = "Use 8 to 72 characters") String password,
         @NotBlank @Size(max = 150) String fullName,
-        @Size(max = 40) String phone) {}
+        @Size(max = 40) String phone,
+        @Size(max = 24) String referralCode,
+        @Size(max = 64) String visitorId) {
+        public RegisterRequest(String email, String password, String fullName, String phone) { this(email, password, fullName, phone, null, null); }
+    }
 
     public record LoginRequest(@NotBlank String email, @NotBlank String password) {}
     public record RefreshRequest(@NotBlank String refreshToken) {}
@@ -70,6 +75,8 @@ public class AuthService {
             throw ApiException.conflict("An account with this email already exists");
         }
         account.sendVerification(u);
+        // ShopScale Partners: decided on the server from the recorded click; runs after this registration commits and can never block it.
+        attribution.attributeAfterCommit(u.getId(), u.getEmail(), u.getPhone(), r.referralCode(), r.visitorId());
         return issue(u, null, UUID.randomUUID());
     }
 

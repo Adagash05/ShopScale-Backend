@@ -30,6 +30,22 @@ public final class EmailTemplates {
         return new Mail("Reset your ShopScale password", text, html);
     }
 
+    /** A plain branded notice: greeting, a few paragraphs and an optional button (used by ShopScale Partners). */
+    public static Mail notice(String subject, String heading, String name, java.util.List<String> paragraphs, String buttonLabel, String link) {
+        StringBuilder text = new StringBuilder("Hello " + clean(name) + ",\n\n");
+        StringBuilder html = new StringBuilder("<p>Hello " + esc(name) + ",</p>");
+        for (String p : paragraphs) {
+            text.append(clean(p)).append("\n\n");
+            html.append("<p>").append(esc(p)).append("</p>");
+        }
+        if (buttonLabel != null && link != null) {
+            text.append(buttonLabel).append(": ").append(link).append("\n\n");
+            html.append(button(link, buttonLabel));
+        }
+        text.append("- ShopScale Partners");
+        return new Mail(subject, text.toString(), layout(heading, html.toString()));
+    }
+
     private static String button(String link, String label) {
         return "<p style=\"margin:24px 0\"><a href=\"" + esc(link) + "\" style=\"background:" + BRAND
             + ";color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block\">" + esc(label) + "</a></p>";

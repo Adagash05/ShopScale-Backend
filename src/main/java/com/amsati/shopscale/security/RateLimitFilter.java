@@ -22,14 +22,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest req) {
         String p = req.getRequestURI();
         return !(p.equals("/api/auth/login") || p.equals("/api/auth/register") || p.equals("/api/auth/refresh") || p.equals("/api/auth/forgot-password") || p.equals("/api/auth/reset-password") || p.equals("/api/auth/verify-email") || p.equals("/api/auth/resend-verification")
-            || (p.startsWith("/api/public/store/") && req.getMethod().equals("POST")) || (p.startsWith("/api/public/orders/") && req.getMethod().equals("POST")) || p.equals("/api/team/invitations/accept") || p.equals("/api/team/invitations/preview"));
+            || (p.startsWith("/api/public/store/") && req.getMethod().equals("POST")) || (p.startsWith("/api/public/orders/") && req.getMethod().equals("POST")) || p.equals("/api/public/partners/click") || (p.equals("/api/partners/apply") || p.equals("/api/partners/withdrawals") || p.startsWith("/api/admin/partners/withdrawals/")) && !req.getMethod().equals("GET") || p.endsWith("/bank-details") || p.equals("/api/team/invitations/accept") || p.equals("/api/team/invitations/preview"));
     }
 
     /** Per address and per endpoint group, so resending a confirmation email never uses up someone's sign-in attempts. */
     static String key(HttpServletRequest req) {
         String p = req.getRequestURI();
         String group = p.equals("/api/auth/register") ? "register" : p.equals("/api/auth/resend-verification") ? "resend"
-            : p.equals("/api/auth/forgot-password") ? "forgot" : "other";
+            : p.equals("/api/auth/forgot-password") ? "forgot" : p.equals("/api/public/partners/click") ? "click"
+            : p.startsWith("/api/partners/") || p.startsWith("/api/admin/partners/") ? "partner" : "other";
         return req.getRemoteAddr() + "|" + group;
     }
 
@@ -42,7 +43,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         boolean limited;
         synchronized (q) {
             while (!q.isEmpty() && now - q.peekFirst() > WINDOW_MS) q.pollFirst();
-            limited = q.size() >= (key.endsWith("|other") ? MAX_REQUESTS : MAX_SENDING_REQUESTS);
+            limited = q.size() >= (key.endsWith("|other") || key.endsWith("|click") || key.endsWith("|partner") ? MAX_REQUESTS : MAX_SENDING_REQUESTS);
             if (!limited) q.addLast(now);
         }
         if (limited) {

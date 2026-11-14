@@ -25,7 +25,8 @@ class PermissionAnnotationsTest {
         "SubscriptionController.plans", "TeamController.preview", "TeamController.accept",
         "BillingController.webhook", "StoreWebhookController.receive", "ProductImageController.serve", "UnitController.common", "BranchController.list",
         "StoreExtrasController.logo", "StoreExtrasController.reviews", "StoreExtrasController.testimonials", "StoreExtrasController.review",
-        "StoreExtrasController.subscribe", "StoreExtrasController.enquire", "StoreExtrasController.lookup");
+        "StoreExtrasController.subscribe", "StoreExtrasController.enquire", "StoreExtrasController.lookup",
+        "PartnerPublicController.programme", "PartnerPublicController.click");
 
     private static List<Class<?>> controllers() throws Exception {
         var scanner = new ClassPathScanningCandidateComponentProvider(false);

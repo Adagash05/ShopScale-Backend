@@ -60,6 +60,11 @@ app:
     secret-key: ${PAYSTACK_SECRET_KEY:}
   encryption-key: ${APP_ENCRYPTION_KEY:}
   invitation-ttl-days: 7
+  partners:
+    # Accounts (verified email) allowed to run ShopScale Partners administration. Comma separated.
+    admin-emails: ${PLATFORM_ADMIN_EMAILS:}
+    # Where referral links point (the public site redirects /register to the app). Defaults to FRONTEND_URL.
+    referral-base-url: ${PARTNERS_REFERRAL_BASE_URL:}
   mail:
     from: ${MAIL_FROM:}
   business:

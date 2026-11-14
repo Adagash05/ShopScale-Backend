@@ -23,3 +23,11 @@ Business rules in `application.yml` (`app.*`): enabled business types (`RETAIL`)
 | `VITE_SUPPORT_EMAIL`, `VITE_WHATSAPP_NUMBER` | Shown on the Contact page when set |
 
 See STOREFRONT_AND_BILLING.md for `APP_ENCRYPTION_KEY`, `PAYSTACK_SECRET_KEY`, `PUBLIC_API_URL`, `STOREFRONT_URL`. Merchants' Paystack keys are entered in the app, not in env.
+
+## ShopScale Partners
+| Variable | Required | Purpose |
+|---|---|---|
+| `PLATFORM_ADMIN_EMAILS` | to administer the programme | Comma-separated emails allowed into `/admin/partners`. The account must exist, be active and have a verified email. Empty = nobody has admin access. |
+| `PARTNERS_REFERRAL_BASE_URL` | no | Host used in referral links (`…/register?ref=CODE`). Defaults to `FRONTEND_URL`. Must be the host that serves `/register` (the app host). |
+| `APP_ENCRYPTION_KEY` | yes (already required) | Encrypts partners' bank account numbers. Saving bank details is refused without it. |
+| `FRONTEND_URL`, `MAIL_*` / Resend | yes (already required) | Links and notification emails. |
