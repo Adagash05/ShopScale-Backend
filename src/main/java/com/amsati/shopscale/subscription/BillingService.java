@@ -30,8 +30,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * ShopScale's own billing, charged to the AMSATI Paystack account (PAYSTACK_SECRET_KEY).
  * A paid plan is never activated from a browser redirect: only a successful, amount-matched Paystack verification
  * (our own server-side call, triggered by the return page or by the signed webhook) activates it, exactly once.
- * Plans are prepaid for one month or one year. A customer who ticks the automatic-renewal consent at checkout has the reusable
- * Paystack authorization saved (encrypted); {@link RenewalService} then charges it when the period ends. Without consent, renewal is a new checkout.
+ * Plans are prepaid for one month or one year and ALWAYS renew automatically: every paid checkout saves the card's reusable Paystack
+ * authorization (encrypted) and turns automatic renewal on; {@link RenewalService} then charges it when each period ends, until the
+ * customer cancels. There is no one-time option and no opt-in. Cancelling stops future charges and keeps access until the paid period ends.
  */
 @Service
 @RequiredArgsConstructor
@@ -57,8 +58,8 @@ public class BillingService {
     @Value("${app.frontend-url:}") private String frontendUrl;
     @Value("${app.subscription.grace-days:3}") private int graceDays;
 
-    /** autoRenew + consent: the customer ticked the automatic-renewal box. Both must be true for the authorization to be saved. */
-    public record CheckoutRequest(String planCode, BillingCycle cycle, Boolean autoRenew, Boolean consent) {}
+    /** Plan and billing period only. Automatic renewal is not a choice, so older clients that still send autoRenew/consent have those fields ignored. */
+    public record CheckoutRequest(String planCode, BillingCycle cycle) {}
     public record Quote(String planCode, String planName, BillingCycle cycle, BigDecimal listPrice, BigDecimal credit, BigDecimal amount, String kind) {}
     public record Checkout(String reference, String authorizationUrl, Quote quote) {}
     public record PaymentDto(UUID id, String planCode, BillingCycle cycle, String kind, BigDecimal amount, String status, String reference, Instant paidAt, Instant periodEnd, Instant createdAt, String note, String source) {}
@@ -125,9 +126,8 @@ public class BillingService {
         String email = Tenant.principal().email();
         if (email == null || email.isBlank()) throw ApiException.badRequest("Your account has no email address");
         if (frontendUrl == null || frontendUrl.isBlank()) throw ApiException.conflict("Online billing is not set up on this server yet (FRONTEND_URL).");
-        boolean wantsAuto = Boolean.TRUE.equals(r.autoRenew());
-        if (wantsAuto && !Boolean.TRUE.equals(r.consent())) throw ApiException.badRequest("Please confirm that you agree to automatic renewal, or untick it.");
-        if (wantsAuto && !box.isConfigured()) throw ApiException.conflict("Automatic renewal is not available on this server yet. You can still pay for one period.");
+        // Subscriptions renew automatically, so a payment that could not be renewed later is never started.
+        if (!box.isConfigured()) throw ApiException.conflict("Subscription billing is not fully set up on this server yet (APP_ENCRYPTION_KEY), so payment cannot be started.");
         SubscriptionPayment p = new SubscriptionPayment();
         p.setBusinessId(bid);
         p.setPlanCode(q.planCode());
@@ -138,14 +138,14 @@ public class BillingService {
         p.setCredit(q.credit());
         p.setInitiatedBy(Tenant.userId());
         p.setCustomerEmail(email.trim());
-        p.setAutoRenewConsent(wantsAuto);
-        p.setConsentAt(wantsAuto ? Instant.now() : null);
+        p.setAutoRenewConsent(true);   // automatic renewal is the terms of every paid plan, disclosed on the checkout screen
+        p.setConsentAt(Instant.now());
         p.setReference("SSB-" + TokenHash.newToken().substring(0, 28));
         payments.save(p);
         try {
             String callback = frontendUrl.replaceAll("/+$", "") + "/more/plan?reference=" + p.getReference();
             var init = paystack.initialize(secretKey, email, PaystackClient.toKobo(q.amount()), p.getReference(), callback,
-                Map.of("business_id", bid.toString(), "plan", q.planCode(), "cycle", q.cycle().name(), "kind", q.kind()));
+                Map.of("business_id", bid.toString(), "plan", q.planCode(), "cycle", q.cycle().name(), "kind", q.kind()), List.of("card"));
             if (init.authorizationUrl() == null || !init.authorizationUrl().startsWith("https://")) throw new IllegalStateException("Paystack returned no checkout address");
             return new Checkout(p.getReference(), init.authorizationUrl(), q);
         } catch (RuntimeException e) {
@@ -270,11 +270,12 @@ public class BillingService {
             s.setCancelledAt(null);
             s.setUpdatedAt(now);
             if (!auto) {
-                // The checkout decides automatic renewal: ticked and consented -> the reusable authorization is saved; otherwise it is switched off.
-                boolean saved = p.isAutoRenewConsent() && saveAuthorization(p, v, now);
+                // Every paid checkout turns automatic renewal on and saves the card's reusable authorization. Only a card Paystack says cannot
+                // be charged again leaves renewal off; the plan is still paid, and the customer is told to add another card.
+                boolean saved = saveAuthorization(p, v, now);
                 s.setAutoRenew(saved);
-                s.setAutoRenewConsentAt(saved ? p.getConsentAt() : null);
-                if (p.isAutoRenewConsent() && !saved) p.setFailureNote("This card cannot be used for automatic renewal. Your plan is paid; renew manually next time or use another card.");
+                s.setAutoRenewConsentAt(saved ? (p.getConsentAt() != null ? p.getConsentAt() : now) : null);
+                if (!saved) p.setFailureNote("This card cannot be used for automatic renewal. Your plan is paid, but add a card that can be charged again so it keeps renewing.");
             }
             subscriptions.save(s);
             p.setStatus("SUCCESS");
@@ -287,7 +288,7 @@ public class BillingService {
             if (!auto) {
                 notify[0] = p.getBusinessId();
                 msg[0] = "Subscription active";
-                msg[1] = "Your " + p.getPlanCode() + " plan is active until " + end.atZone(ZoneOffset.UTC).toLocalDate() + "." + (s.isAutoRenew() ? " It renews automatically; you can turn that off any time." : "");
+                msg[1] = "Your " + p.getPlanCode() + " plan is active until " + end.atZone(ZoneOffset.UTC).toLocalDate() + "." + (s.isAutoRenew() ? " It renews automatically each " + (p.getBillingCycle() == BillingCycle.ANNUAL ? "year" : "month") + " until you cancel." : " This card cannot be charged again automatically. Add another card on the Plan page so it keeps renewing.");
             }
         });
         if (notify[0] != null) notifications.publish(notify[0], Permission.SUBSCRIPTION_VIEW, "BILLING", msg[0], msg[1], "/more/plan", "billing-" + paymentId);
@@ -389,10 +390,11 @@ public class BillingService {
     }
 
     /**
-     * Turn automatic renewal off, or on again with fresh consent. Turning on needs a saved reusable payment method and a plan that has
-     * not yet ended; a cancelled plan still inside its paid period is resumed. Otherwise the customer pays through checkout, which can save a new card.
+     * Turn automatic renewal off (the same as cancelling at the end of the period) or back on. Turning on needs a saved reusable payment method and
+     * a plan that has not yet ended; a cancelled plan still inside its paid period is resumed. Otherwise the customer pays through checkout,
+     * which saves a new card and turns renewal on. Only the customer's own request switches renewal off; nothing here turns it on by itself.
      */
-    public SubscriptionService.Result setAutoRenew(boolean enabled, boolean consent) {
+    public SubscriptionService.Result setAutoRenew(boolean enabled) {
         UUID bid = Tenant.businessId();
         tx().executeWithoutResult(st -> {
             Subscription s = subscriptions.lockById(subscriptions.findByBusinessId(bid).orElseThrow(() -> ApiException.notFound("No subscription")).getId()).orElseThrow();
@@ -404,9 +406,8 @@ public class BillingService {
                 audit.record(bid, Tenant.userId(), "AUTO_RENEW_OFF", "subscription", s.getId(), s.getPlanCode());
                 return;
             }
-            if (!consent) throw ApiException.badRequest("Please confirm that you agree to automatic renewal.");
-            if (s.getStatus() == SubscriptionStatus.SUSPENDED || s.getStatus() == SubscriptionStatus.EXPIRED || !now.isBefore(s.getCurrentPeriodEnd())) throw ApiException.conflict("Your plan has ended. Renew it with a payment and tick automatic renewal.");
-            if (authorizations.findByBusinessIdAndActiveTrue(bid).filter(BillingAuthorization::isReusable).isEmpty()) throw ApiException.conflict("There is no saved payment method. Renew with a payment and tick automatic renewal to save one.");
+            if (s.getStatus() == SubscriptionStatus.SUSPENDED || s.getStatus() == SubscriptionStatus.EXPIRED || !now.isBefore(s.getCurrentPeriodEnd())) throw ApiException.conflict("Your plan has ended. Pay for a plan to start a new subscription.");
+            if (authorizations.findByBusinessIdAndActiveTrue(bid).filter(BillingAuthorization::isReusable).isEmpty()) throw ApiException.conflict("There is no saved payment method. Pay for your plan to save a card.");
             s.setAutoRenew(true);
             s.setAutoRenewConsentAt(now);
             if (s.getStatus() == SubscriptionStatus.CANCELLED) { s.setStatus(SubscriptionStatus.ACTIVE); s.setCancelledAt(null); }
@@ -428,7 +429,7 @@ public class BillingService {
                 String date = s.getCurrentPeriodEnd().atZone(ZoneOffset.UTC).toLocalDate().toString();
                 boolean auto = s.isAutoRenew() && s.getStatus() == SubscriptionStatus.ACTIVE;
                 notifications.publish(s.getBusinessId(), Permission.SUBSCRIPTION_VIEW, "BILLING", auto ? "Your plan renews soon" : "Your plan ends soon",
-                    auto ? "Your plan renews automatically on " + date + ". Turn automatic renewal off on the Plan page if you do not want to be charged."
+                    auto ? "Your plan renews automatically on " + date + ". Cancel on the Plan page before then if you do not want to be charged."
                          : "Your plan ends on " + date + ". Renew to keep every feature; otherwise you move to the Free plan and your data stays safe.",
                     "/more/plan", "expiry-" + s.getId() + "-" + date);
             }

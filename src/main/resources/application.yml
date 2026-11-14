@@ -60,6 +60,11 @@ app:
     secret-key: ${PAYSTACK_SECRET_KEY:}
   encryption-key: ${APP_ENCRYPTION_KEY:}
   invitation-ttl-days: 7
+  platform-admin:
+    # One-time creation of the FIRST platform administrator (see docs/PLATFORM_ADMIN.md). Leave both empty after the first start.
+    bootstrap-email: ${PLATFORM_ADMIN_BOOTSTRAP_EMAIL:}
+    bootstrap-password: ${PLATFORM_ADMIN_BOOTSTRAP_PASSWORD:}
+    bootstrap-name: ${PLATFORM_ADMIN_BOOTSTRAP_NAME:Platform Administrator}
   partners:
     # Accounts (verified email) allowed to run ShopScale Partners administration. Comma separated.
     admin-emails: ${PLATFORM_ADMIN_EMAILS:}

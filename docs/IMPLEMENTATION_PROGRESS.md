@@ -31,7 +31,7 @@ Not done: offline receipts printing, offline payments on credit/part payments, o
 No integration, build or backend test execution was possible.
 
 ## G. Billing repair and automatic renewal (session 2, 2026-11-11): IMPLEMENTED, NOT EXECUTED END-TO-END
-Full root-cause, change and test report: `docs/BILLING.md`. Summary: migration V19; `RenewalService` (SKIP LOCKED + unique attempt rows), authorization capture with consent, cancel/resume/auto-renew endpoints, startup config validator, `settle` hardening (abandoned status, customer/metadata checks, transaction id), webhook over raw bytes, `Plan.jsx` reference recovery + consent + renewal panel.
+Full root-cause, change and test report: `docs/BILLING.md`. Summary: migration V19; `RenewalService` (SKIP LOCKED + unique attempt rows), authorization capture (automatic renewal is mandatory since 2026-11-14, see BILLING.md section E), cancel/resume/auto-renew endpoints, startup config validator, `settle` hardening (abandoned status, customer/metadata checks, transaction id), webhook over raw bytes, `Plan.jsx` reference recovery + consent + renewal panel.
 Run: migrations V1-V19 on PostgreSQL 16, V19 over existing data, constraint tests, concurrent SKIP LOCKED claim (3 + 1, no overlap), 14 date/config assertions in a JDK harness, syntax checks. Not run: Maven build and JUnit, Hibernate startup validation, any Paystack sandbox call, vitest (`plan.test.jsx`), merchant storefront regression.
 Next billing task: on a networked machine run `mvn test`, fix compile/mapping errors, then the Paystack test-mode walkthrough listed under "First actions" in `docs/BILLING.md`.
 
@@ -80,3 +80,6 @@ See `docs/EMAIL_AND_REGISTRATION.md`. Verified in the build sandbox: migrations 
 
 ## ShopScale Partners (affiliate programme), Nov 13 2026
 Implemented end to end: applications and approval, referral links with click tracking and last-referral attribution, a commission ledger (earned only from verified payments, held, reserved, paid, reversed), refund/chargeback reversal, bank details (encrypted), withdrawals with an admin workflow and manual-transfer records, admin settings, reports, CSV export and partner resources, a public landing page with a real-price calculator, and notification emails. Migration `V23__partners.sql`. Full description, rules, endpoints, setup checklist, limits and verification status: `docs/PARTNERS.md`.
+
+## 2026-11-14: checkout, notifications, platform admin, media audit
+Stock notification link fixed, storefront checkout lazy-loading failure fixed, pending-order sweeper, first-admin bootstrap, image storage audit. Details, test status and what still needs staging verification: `PRODUCTION_FIXES_2026-11-14.md`, `PLATFORM_ADMIN.md`, `MEDIA_STORAGE.md`.

@@ -35,6 +35,7 @@ public class ProductImageController {
         if (bytes.length > MAX_BYTES) throw ApiException.badRequest("The image is too large. Use one under 600 KB.");
         String type = sniff(bytes);
         if (type == null) throw ApiException.badRequest("Use a JPEG, PNG or WebP image");
+        dropCurrent(p, bid);
         ProductImage img = new ProductImage();
         img.setBusinessId(bid);
         img.setProductId(id);
@@ -54,8 +55,20 @@ public class ProductImageController {
     public void remove(@PathVariable UUID id) {
         UUID bid = Tenant.businessId();
         Product p = products.findById(id).filter(x -> x.getBusinessId().equals(bid)).orElseThrow(() -> ApiException.notFound("Product not found"));
+        dropCurrent(p, bid);
         p.setImageUrl(null);
         p.setUpdatedAt(Instant.now());
+    }
+
+    /** Deletes the stored bytes of the product's current main picture (only if it is one of ours, this business's, and not a gallery photo), so replaced or removed pictures do not pile up in the database. */
+    private void dropCurrent(Product p, UUID bid) {
+        String url = p.getImageUrl();
+        int at = url == null ? -1 : url.lastIndexOf("/api/public/images/");
+        if (at < 0) return;
+        try {
+            UUID old = UUID.fromString(url.substring(at + "/api/public/images/".length()));
+            images.findByIdAndBusinessId(old, bid).filter(i -> !i.isGallery() && p.getId().equals(i.getProductId())).ifPresent(images::delete);
+        } catch (IllegalArgumentException ignored) { /* an external or malformed URL: nothing of ours to delete */ }
     }
 
     @GetMapping("/api/public/images/{id}")

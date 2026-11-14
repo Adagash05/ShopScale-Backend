@@ -165,6 +165,12 @@ public class RenewalService {
 
     // ---------- step 3: the Paystack call and verification (outside any transaction) ----------
     private void charge(Job j) {
+        // Last look before money moves: a customer who cancelled after this job was claimed must not be charged.
+        Subscription cur = subscriptions.findById(j.subscriptionId()).orElse(null);
+        if (cur == null || !cur.isAutoRenew() || (cur.getStatus() != SubscriptionStatus.ACTIVE && cur.getStatus() != SubscriptionStatus.PAST_DUE)) {
+            dropAttempt(j, "Renewal stopped: the subscription was cancelled before the charge");
+            return;
+        }
         PaystackClient.Charge c;
         try {
             String code = box.decrypt(j.authCodeEnc());
@@ -189,6 +195,16 @@ public class RenewalService {
             return;
         }
         finish(j);
+    }
+
+    /** Closes an attempt that was never sent to Paystack. Nothing is charged, nothing is retried, and the subscription is not touched. */
+    private void dropAttempt(Job j, String reason) {
+        tx().executeWithoutResult(st -> {
+            Instant t = Instant.now();
+            renewals.findById(j.renewalId()).ifPresent(r -> { r.setStatus("FAILED"); r.setFinishedAt(t); r.setNextRetryAt(null); r.setFailureReason(reason); });
+            payments.findById(j.paymentId()).ifPresent(p -> { p.setStatus("FAILED"); p.setFailureNote(reason); p.setUpdatedAt(t); });
+        });
+        log.info("Renewal {} not charged: {}", j.reference(), reason);
     }
 
     /** Verifies with Paystack and settles. Network trouble leaves the attempt PENDING for recoverPending. */

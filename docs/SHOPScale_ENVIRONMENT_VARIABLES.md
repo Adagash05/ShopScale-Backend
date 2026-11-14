@@ -28,6 +28,7 @@ See STOREFRONT_AND_BILLING.md for `APP_ENCRYPTION_KEY`, `PAYSTACK_SECRET_KEY`, `
 | Variable | Required | Purpose |
 |---|---|---|
 | `PLATFORM_ADMIN_EMAILS` | to administer the programme | Comma-separated emails allowed into `/admin/partners`. The account must exist, be active and have a verified email. Empty = nobody has admin access. |
+| `PLATFORM_ADMIN_BOOTSTRAP_EMAIL`, `PLATFORM_ADMIN_BOOTSTRAP_PASSWORD` | first start only | One-time creation of the first platform administrator (email must also be in `PLATFORM_ADMIN_EMAILS`; password 12+ chars with upper/lower/digit/symbol). Remove both after the first start. See PLATFORM_ADMIN.md. |
 | `PARTNERS_REFERRAL_BASE_URL` | no | Host used in referral links (`…/register?ref=CODE`). Defaults to `FRONTEND_URL`. Must be the host that serves `/register` (the app host). |
 | `APP_ENCRYPTION_KEY` | yes (already required) | Encrypts partners' bank account numbers. Saving bank details is refused without it. |
 | `FRONTEND_URL`, `MAIL_*` / Resend | yes (already required) | Links and notification emails. |

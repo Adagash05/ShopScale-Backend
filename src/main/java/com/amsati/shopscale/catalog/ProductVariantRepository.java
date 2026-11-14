@@ -43,6 +43,10 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     @Query("select v from ProductVariant v join fetch v.product p where v.businessId = :b and v.active = true and p.status = :status")
     List<ProductVariant> activeWithProduct(@Param("b") UUID b, @Param("status") ProductStatus status);
 
+    /** Variants with their product loaded, for callers that run outside a transaction (the product relation is lazy and open-in-view is off). */
+    @Query("select v from ProductVariant v join fetch v.product where v.id in :ids")
+    List<ProductVariant> withProduct(@Param("ids") Collection<UUID> ids);
+
     List<ProductVariant> findByProductIdIn(Collection<UUID> productIds);
     List<ProductVariant> findByProductId(UUID productId);
     Optional<ProductVariant> findByBusinessIdAndSkuIgnoreCase(UUID businessId, String sku);

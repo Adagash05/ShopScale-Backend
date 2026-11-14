@@ -56,6 +56,11 @@ public class PaystackClient {
     public void checkKey(String secret) { call(secret, "GET", "/bank?perPage=1", null); }
 
     public Init initialize(String secret, String email, long amountKobo, String reference, String callbackUrl, Map<String, Object> metadata) {
+        return initialize(secret, email, amountKobo, reference, callbackUrl, metadata, null);
+    }
+
+    /** {@code channels} limits which payment methods Paystack offers (null = Paystack's default). Subscriptions use "card": only a card yields a reusable authorization. */
+    public Init initialize(String secret, String email, long amountKobo, String reference, String callbackUrl, Map<String, Object> metadata, java.util.List<String> channels) {
         Map<String, Object> body = new java.util.LinkedHashMap<>();
         body.put("email", email);
         body.put("amount", amountKobo);
@@ -63,6 +68,7 @@ public class PaystackClient {
         body.put("reference", reference);
         body.put("callback_url", callbackUrl);
         if (metadata != null) body.put("metadata", metadata);
+        if (channels != null && !channels.isEmpty()) body.put("channels", channels);
         JsonNode d = call(secret, "POST", "/transaction/initialize", body).path("data");
         return new Init(d.path("authorization_url").asText(), d.path("reference").asText(reference));
     }

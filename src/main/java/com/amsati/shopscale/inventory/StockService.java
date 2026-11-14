@@ -58,7 +58,7 @@ public class StockService {
         if (change.signum() < 0 && low != null && low.signum() > 0 && total.compareTo(low) <= 0 && total.subtract(change).compareTo(low) > 0) {
             String name = v.getProduct().getName() + (v.getLabel() == null || v.getLabel().isBlank() ? "" : " (" + v.getLabel() + ")");
             notify.publish(bid, com.amsati.shopscale.security.Permission.STOCK_VIEW, "LOW_STOCK", name + " is running low",
-                "Only " + total.stripTrailingZeros().toPlainString() + " left.", "/stock", "low:" + v.getId() + ":" + java.time.LocalDate.now());
+                "Only " + total.stripTrailingZeros().toPlainString() + " left.", "/more/stock", "low:" + v.getId() + ":" + java.time.LocalDate.now());
         }
         return saved;
     }

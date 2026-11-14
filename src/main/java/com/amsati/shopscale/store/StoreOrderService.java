@@ -164,7 +164,7 @@ public class StoreOrderService {
         for (ProductVariant v : rows) productIds.add(v.getProduct().getId());
         String api = publicApiUrl == null ? "" : publicApiUrl.replaceAll("/+$", "");
         Map<UUID, List<String>> gallery = new HashMap<>();
-        for (ProductImage im : images.findByBusinessIdAndGalleryTrueOrderByPositionAscCreatedAtAsc(bid))
+        for (ProductImageRepository.GalleryRef im : images.galleryRefs(bid))
             gallery.computeIfAbsent(im.getProductId(), k -> new ArrayList<>()).add(api + "/api/public/images/" + im.getId());
         Map<UUID, Object[]> rating = new HashMap<>();
         for (Object[] r : reviews.summary(bid)) rating.put((UUID) r[0], r);
@@ -239,7 +239,7 @@ public class StoreOrderService {
         Map<UUID, BigDecimal> here = new HashMap<>();
         for (BranchStock bs : branchStock.forBranch(bid, branch)) here.put(bs.getId().getVariantId(), bs.getQuantity());
         Map<UUID, ProductVariant> byId = new HashMap<>();
-        for (ProductVariant v : variants.findAllById(perVariant.keySet())) byId.put(v.getId(), v);
+        for (ProductVariant v : variants.withProduct(perVariant.keySet())) byId.put(v.getId(), v);
         if (byId.size() != perVariant.size()) throw ApiException.badRequest("An item in your cart is no longer available");
         for (ProductVariant v : byId.values()) {
             if (!v.getBusinessId().equals(bid) || !v.isActive() || v.getProduct().getStatus() != ProductStatus.ACTIVE
@@ -348,12 +348,54 @@ public class StoreOrderService {
                 url = paystack.initialize(secret, o.getEmail(), PaystackClient.toKobo(total), o.getPaystackReference(), callback,
                     Map.of("store_order", o.getId().toString(), "order_number", o.getNumber())).authorizationUrl();
             } catch (RuntimeException e) {
-                log.warn("Paystack initialise failed for store order {}: {}", o.getId(), e.getMessage());
-                tx().executeWithoutResult(st -> orders.findById(o.getId()).ifPresent(x -> { x.setStatus("CANCELLED"); x.setAttention("Could not start payment"); }));
-                throw ApiException.conflict("We could not start the payment. Please try again.");
+                // Never leave the order waiting for a payment that cannot start, and tell the customer what to do next.
+                boolean merchantSide = !(e instanceof ApiException a) || a.getStatus() == org.springframework.http.HttpStatus.BAD_REQUEST;
+                log.warn("Paystack initialise failed for store order {} ({}): {}", o.getId(), merchantSide ? "store payment setup" : "provider unreachable", e.getMessage());
+                String note = merchantSide ? "Online payment could not start: the Paystack connection was refused. Reconnect Paystack in Store settings." : "Online payment could not start: Paystack could not be reached.";
+                tx().executeWithoutResult(st -> orders.findById(o.getId()).ifPresent(x -> { x.setStatus("CANCELLED"); x.setAttention(note); x.setUpdatedAt(Instant.now()); }));
+                if (merchantSide) {
+                    try { notifications.publish(bid, Permission.STORE_ORDERS_MANAGE, "STORE_PAYMENT", "Customers cannot pay online", "Paystack refused a payment from your store. Check your Paystack keys in Store settings.", "/more/store", "store-pay-fail-" + bid + "-" + java.time.LocalDate.now()); }
+                    catch (RuntimeException ignored) { /* the order is already cancelled; the notice is best effort */ }
+                }
+                throw ApiException.conflict(merchantSide
+                    ? "Online payment is not working for this store right now." + (s.isPayLaterEnabled() ? " Choose pay on " + (method.equals("DELIVERY") ? "delivery" : "pickup") + " or try again later." : " Please contact the store.")
+                    : "We could not reach the payment provider. Please try again in a moment.");
             }
         }
         return new Placed(o.getPublicToken(), o.getStatus(), mode, url);
+    }
+
+    /**
+     * Orders left waiting for payment: asks the merchant's Paystack (the customer may have paid and never come back, and the
+     * webhook may not be set up), settles the ones that were paid, and closes the ones that never will be.
+     */
+    @org.springframework.scheduling.annotation.Scheduled(initialDelayString = "${app.store.reconcile-initial-delay-ms:120000}", fixedDelayString = "${app.store.reconcile-poll-ms:600000}")
+    public void reconcilePending() {
+        try {
+            Instant now = Instant.now();
+            for (StoreOrder o : orders.stalePending(now.minusSeconds(600), org.springframework.data.domain.PageRequest.of(0, 100))) {
+                try { reconcileOne(o.getId(), now); }
+                catch (RuntimeException e) { log.warn("Could not reconcile store order {}: {}", o.getId(), e.getMessage()); }
+            }
+        } catch (RuntimeException e) { log.error("Store order reconcile failed: {}", e.toString()); }
+    }
+
+    void reconcileOne(UUID id, Instant now) {
+        StoreOrder o = orders.findById(id).orElse(null);
+        if (o == null || !"PENDING_PAYMENT".equals(o.getStatus())) return;
+        boolean old = o.getCreatedAt().isBefore(now.minusSeconds(24 * 3600));
+        boolean neverReached = false;
+        StoreSettings s = settingsRepo.findById(o.getBusinessId()).orElse(null);
+        if (s != null && s.getPaystackSecretEnc() != null && o.getPaystackReference() != null) {
+            var v = paystack.find(box.decrypt(s.getPaystackSecretEnc()), o.getPaystackReference());
+            if (v == null) neverReached = o.getCreatedAt().isBefore(now.minusSeconds(3600));
+            else settle(id, v);
+        }
+        if (old || neverReached) {
+            tx().executeWithoutResult(st -> orders.lockById(id).ifPresent(x -> {
+                if ("PENDING_PAYMENT".equals(x.getStatus()) && !"PAID".equals(x.getPaymentStatus())) { x.setStatus("CANCELLED"); x.setUpdatedAt(Instant.now()); }
+            }));
+        }
     }
 
     private String storeBase() { return storefrontUrl == null || storefrontUrl.isBlank() ? frontendUrl.replaceAll("/+$", "") + "/s" : storefrontUrl.replaceAll("/+$", ""); }
@@ -574,7 +616,7 @@ public class StoreOrderService {
     private OrderDto toDto(StoreOrder o, boolean publicView) {
         List<StoreOrderItem> stored = orderItems.findByOrderId(o.getId());
         Map<UUID, UUID> productOf = new HashMap<>();
-        if (publicView) for (ProductVariant v : variants.findAllById(stored.stream().map(StoreOrderItem::getVariantId).toList())) productOf.put(v.getId(), v.getProduct().getId());
+        if (publicView) for (ProductVariant v : variants.withProduct(stored.stream().map(StoreOrderItem::getVariantId).toList())) productOf.put(v.getId(), v.getProduct().getId());
         List<OrderItemDto> its = stored.stream().map(i -> new OrderItemDto(i.getVariantId(), productOf.get(i.getVariantId()), i.getItemName(), i.getQuantity(), i.getUnitPrice(), i.getLineTotal())).toList();
         String name = businesses.findById(o.getBusinessId()).map(Business::getName).orElse("");
         return new OrderDto(publicView ? null : o.getId(), o.getNumber(), publicView ? o.getPublicToken() : null, o.getCustomerName(), o.getPhone(), o.getEmail(), o.getDeliveryMethod(),

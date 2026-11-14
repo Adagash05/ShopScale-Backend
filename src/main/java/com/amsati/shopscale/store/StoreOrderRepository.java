@@ -14,5 +14,8 @@ public interface StoreOrderRepository extends JpaRepository<StoreOrder, UUID> {
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from StoreOrder o where o.id = :id")
     Optional<StoreOrder> lockById(@Param("id") UUID id);
+    /** Online orders still waiting for payment after {@code before}: the customer may have paid and never returned. */
+    @Query("select o from StoreOrder o where o.status = 'PENDING_PAYMENT' and o.createdAt < :before order by o.createdAt")
+    List<StoreOrder> stalePending(@Param("before") java.time.Instant before, org.springframework.data.domain.Pageable page);
     long countByBusinessIdAndStatus(UUID businessId, String status);
 }

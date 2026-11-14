@@ -32,9 +32,9 @@ public class BillingController {
     @GetMapping("/api/subscriptions/billing") @PreAuthorize("@access.has('SUBSCRIPTION_VIEW')")
     public Overview overview() { return billing.overview(); }
 
-    /** Turn automatic renewal off, or on again with consent (also resumes a cancelled plan that is still inside its paid period). */
+    /** Turn automatic renewal off, or back on (also resumes a cancelled plan that is still inside its paid period). The customer's own action; nothing else switches it off. */
     @PostMapping("/api/subscriptions/auto-renew") @PreAuthorize("@access.has('SUBSCRIPTION_MANAGE')")
-    public SubscriptionService.Result autoRenew(@RequestBody Map<String, Boolean> body) { return billing.setAutoRenew(Boolean.TRUE.equals(body.get("enabled")), Boolean.TRUE.equals(body.get("consent"))); }
+    public SubscriptionService.Result autoRenew(@RequestBody Map<String, Boolean> body) { return billing.setAutoRenew(Boolean.TRUE.equals(body.get("enabled"))); }
 
     @PostMapping("/api/subscriptions/cancel") @PreAuthorize("@access.has('SUBSCRIPTION_MANAGE')")
     public SubscriptionService.Result cancel() { return billing.cancel(); }

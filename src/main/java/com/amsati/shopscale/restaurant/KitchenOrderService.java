@@ -228,7 +228,7 @@ public class KitchenOrderService {
             default -> access.require(Permission.SALES_CREATE);
         }
         it.setStatus(status);
-        if ("READY".equals(status)) notify.publish(bid, Permission.SALES_CREATE, "ORDER_READY", it.getItemName() + " is ready", "Order #" + o.getNumber(), "/more/restaurant", null);
+        if ("READY".equals(status)) notify.publish(bid, Permission.SALES_CREATE, "ORDER_READY", it.getItemName() + " is ready", "Order #" + o.getNumber(), "/sell", null);
         return view(o);
     }
 
