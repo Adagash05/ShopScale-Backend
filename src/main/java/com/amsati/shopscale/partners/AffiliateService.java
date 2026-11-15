@@ -254,6 +254,63 @@ public class AffiliateService {
         return get(id);
     }
 
+    // ---------- Super Admin: create, edit and (when safe) delete ----------
+    public record AdminCreate(@NotBlank @jakarta.validation.constraints.Email @Size(max = 255) String email,
+                              @NotBlank @Size(max = 150) String fullName, @NotBlank @Size(min = 7, max = 40) String phone,
+                              @NotBlank @Size(max = 80) String country, @NotBlank @Size(max = 120) String niche,
+                              @NotNull @Min(0) @Max(2_000_000_000) Integer audienceSize, @Size(max = 8) List<@Valid Social> socials,
+                              @Size(max = 120) String location, @Size(max = 255) String website) {}
+
+    public record AdminEdit(@NotBlank @Size(max = 150) String fullName, @NotBlank @Size(min = 7, max = 40) String phone, @NotBlank @Size(max = 80) String country,
+                            @NotBlank @Size(max = 120) String niche, @NotNull @Min(0) @Max(2_000_000_000) Integer audienceSize, @Size(max = 8) List<@Valid Social> socials,
+                            @Size(max = 120) String location, @Size(max = 255) String website) {}
+
+    /** An administrator registers an existing ShopScale user as an approved partner (they must already have an account to sign in with). */
+    @Transactional
+    public Dto adminCreate(AdminCreate r) {
+        User u = users.findByEmail(r.email().trim().toLowerCase(Locale.ROOT)).filter(User::isActive)
+            .orElseThrow(() -> ApiException.badRequest("No active ShopScale account has that email. Ask the person to register first."));
+        Integer taken = jdbc.queryForObject("select count(*) from affiliates where user_id = ?", Integer.class, u.getId());
+        if (taken != null && taken > 0) throw ApiException.conflict("That account already has a partner record");
+        Programme prog = settings.get();
+        UUID id = UUID.randomUUID();
+        String code = uniqueCode();
+        jdbc.update("insert into affiliates (id, user_id, status, code, full_name, email, phone, country, location, socials, audience_size, niche, reason, website, terms_accepted_at, terms_version, reviewed_by, reviewed_at, approved_at) values (?,?,'APPROVED',?,?,?,?,?,?,?,?,?,?,?,now(),?,?,now(),now())",
+            id, u.getId(), code, r.fullName().trim(), u.getEmail(), r.phone().trim(), r.country().trim(), blank(r.location()),
+            r.socials() == null || r.socials().isEmpty() ? null : joinSocials(r.socials()), r.audienceSize(), r.niche().trim(), "Added by a platform administrator", cleanWebsite(r.website()), prog.termsVersion(), Tenant.userId());
+        audit.record("AFFILIATE_CREATED_BY_ADMIN", "affiliate", id, "code " + code);
+        mail.approved(u.getEmail(), r.fullName().trim(), code);
+        return get(id);
+    }
+
+    @Transactional
+    public Dto adminEdit(UUID id, AdminEdit r) {
+        get(id);
+        jdbc.update("update affiliates set full_name=?, phone=?, country=?, niche=?, audience_size=?, socials=?, location=?, website=?, updated_at=now() where id=?",
+            r.fullName().trim(), r.phone().trim(), r.country().trim(), r.niche().trim(), r.audienceSize(), r.socials() == null || r.socials().isEmpty() ? null : joinSocials(r.socials()), blank(r.location()), cleanWebsite(r.website()), id);
+        audit.record("AFFILIATE_EDITED_BY_ADMIN", "affiliate", id, null);
+        return get(id);
+    }
+
+    /**
+     * Removes a partner record only when nothing depends on it: no referrals, clicks, commissions, withdrawals or bank details.
+     * Anything with referral or money history is refused (suspend instead), so attribution and financial records are never destroyed.
+     * The foreign keys from those tables (NO ACTION) are a second guard.
+     */
+    @Transactional
+    public void adminDelete(UUID id) {
+        get(id);
+        Map<String, Object> deps = jdbc.queryForMap("""
+            select (select count(*) from affiliate_referrals where affiliate_id = ?) as referrals, (select count(*) from affiliate_clicks where affiliate_id = ?) as clicks,
+                   (select count(*) from affiliate_commissions where affiliate_id = ?) as commissions, (select count(*) from affiliate_withdrawals where affiliate_id = ?) as withdrawals,
+                   (select count(*) from affiliate_bank_accounts where affiliate_id = ?) as bank""", id, id, id, id, id);
+        long blocking = ((Number) deps.get("referrals")).longValue() + ((Number) deps.get("clicks")).longValue() + ((Number) deps.get("commissions")).longValue() + ((Number) deps.get("withdrawals")).longValue();
+        if (blocking > 0) throw ApiException.conflict("This partner has referral or payment history (" + deps.get("referrals") + " referrals, " + deps.get("commissions") + " commission records, " + deps.get("withdrawals") + " payouts), which is kept for the records. Suspend the partner instead.");
+        jdbc.update("delete from affiliate_bank_accounts where affiliate_id = ?", id);
+        jdbc.update("delete from affiliates where id = ?", id);
+        audit.record("AFFILIATE_DELETED_BY_ADMIN", "affiliate", id, "no history");
+    }
+
     private static String trim(String s) { String t = s.trim(); return t.length() > 500 ? t.substring(0, 500) : t; }
 
     // ---------- bank details ----------

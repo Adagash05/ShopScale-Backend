@@ -48,6 +48,7 @@ public class InvoiceService {
     private final InvoiceItemRepository items;
     private final InvoicePaymentRepository payments;
     private final InvoiceSettingsRepository settings;
+    private final com.amsati.shopscale.media.MediaService media;
     private final CustomerRepository customers;
     private final CustomerPaymentRepository customerPayments;
     private final SaleRepository sales;
@@ -409,7 +410,7 @@ public class InvoiceService {
             .map(x -> new InvoicePdf.Line(x.getDescription(), x.getQuantity(), x.getUnitPrice(), x.getDiscount(), x.getTaxRate(), x.getLineTotal())).toList();
         LocalDate today = LocalDate.now(ZoneId.of(b.getTimezone() == null ? "Africa/Lagos" : b.getTimezone()));
         BigDecimal balance = i.getTotal().subtract(i.getAmountPaid());
-        return InvoicePdf.render(new InvoicePdf.View(b.getName(), b.getAddress(), b.getPhone(), b.getEmail(), st == null ? null : st.getLogo(),
+        return InvoicePdf.render(new InvoicePdf.View(b.getName(), b.getAddress(), b.getPhone(), b.getEmail(), media.logoBytes(com.amsati.shopscale.media.MediaKeys.Kind.INVOICE_LOGO, i.getBusinessId(), st == null ? null : st.getLogo()).orElse(null),
             InvoiceMath.number(i.getInvoiceNumber()), InvoiceMath.displayStatus(i.getStatus(), i.getTotal(), i.getAmountPaid(), i.getDueDate(), today),
             i.getIssueDate(), i.getDueDate(), i.getPaymentTerms(), i.getCustomerName(), i.getCustomerPhone(), i.getCustomerEmail(), i.getCustomerAddress(),
             ls, i.getSubtotal(), i.getTaxTotal(), i.getInvoiceDiscount(), i.getTotal(), i.getAmountPaid(), balance, i.getPaymentInstructions(), i.getNote()));
@@ -420,7 +421,7 @@ public class InvoiceService {
     public SettingsDto settings() {
         InvoiceSettings s = settings.findById(Tenant.businessId()).orElse(null);
         return s == null ? new SettingsDto(null, null, BigDecimal.ZERO, false)
-            : new SettingsDto(s.getPaymentInstructions(), s.getDefaultTerms(), s.getDefaultTaxRate(), s.getLogo() != null && s.getLogo().length > 0);
+            : new SettingsDto(s.getPaymentInstructions(), s.getDefaultTerms(), s.getDefaultTaxRate(), s.getLogoType() != null || (s.getLogo() != null && s.getLogo().length > 0));
     }
 
     @Transactional
@@ -441,7 +442,7 @@ public class InvoiceService {
         try { if (javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(data)) == null) throw new IllegalArgumentException(); }
         catch (Exception e) { throw ApiException.badRequest("That file is not a readable image"); }
         InvoiceSettings s = settings.findById(Tenant.businessId()).orElseGet(() -> { InvoiceSettings n = new InvoiceSettings(); n.setBusinessId(Tenant.businessId()); return n; });
-        s.setLogo(data);
+        s.setLogo(media.storeNew(Tenant.businessId(), com.amsati.shopscale.media.MediaKeys.Kind.INVOICE_LOGO, Tenant.businessId(), null, data, type) ? null : data);
         s.setLogoType(type);
         settings.save(s);
         return settings();
@@ -450,6 +451,7 @@ public class InvoiceService {
     @Transactional
     public SettingsDto removeLogo() {
         settings.findById(Tenant.businessId()).ifPresent(s -> { s.setLogo(null); s.setLogoType(null); settings.save(s); });
+        media.remove(com.amsati.shopscale.media.MediaKeys.Kind.INVOICE_LOGO, Tenant.businessId());
         return settings();
     }
 

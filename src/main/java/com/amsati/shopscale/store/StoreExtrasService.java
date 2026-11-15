@@ -34,6 +34,7 @@ public class StoreExtrasService {
     private final StoreOrderService orderService;
     private final StoreSettingsRepository settingsRepo;
     private final StoreLogoRepository logos;
+    private final com.amsati.shopscale.media.MediaService media;
     private final StoreOrderRepository orders;
     private final StoreOrderItemRepository orderItems;
     private final ProductRepository products;
@@ -118,12 +119,18 @@ public class StoreExtrasService {
         UUID bid = Tenant.businessId();
         if (bytes == null || bytes.length == 0) throw ApiException.badRequest("Choose an image");
         if (bytes.length > MAX_LOGO_BYTES) throw ApiException.badRequest("The logo is too large. Use one under 300 KB.");
-        String type = ProductImageController.sniff(bytes);
-        if (type == null) throw ApiException.badRequest("Use a JPEG, PNG or WebP image");
+        var info = com.amsati.shopscale.media.ImageProcessor.inspect(bytes);
+        if (info == null) throw ApiException.badRequest("Use a valid JPEG, PNG or WebP image");
+        String type = info.contentType();
         StoreSettings s = load(bid);
-        StoreLogo lg = logos.findById(bid).orElseGet(() -> { StoreLogo n = new StoreLogo(); n.setBusinessId(bid); return n; });
-        lg.setData(bytes);
-        logos.save(lg);
+        // R2 when configured; the older database copy of a replaced logo is cleared so it cannot come back stale. If R2 fails the bytes go to the database.
+        if (media.storeNew(bid, com.amsati.shopscale.media.MediaKeys.Kind.STORE_LOGO, bid, null, bytes, type)) {
+            logos.findById(bid).ifPresent(l -> { l.setData(null); logos.save(l); });
+        } else {
+            StoreLogo lg = logos.findById(bid).orElseGet(() -> { StoreLogo n = new StoreLogo(); n.setBusinessId(bid); return n; });
+            lg.setData(bytes);
+            logos.save(lg);
+        }
         s.setLogoType(type);
         s.setUpdatedAt(Instant.now());
         audit.record(bid, Tenant.userId(), "STORE_LOGO_SAVED", "store", bid, null);
@@ -134,7 +141,8 @@ public class StoreExtrasService {
     public ProfileDto removeLogo() {
         UUID bid = Tenant.businessId();
         StoreSettings s = load(bid);
-        logos.deleteById(bid);
+        logos.findById(bid).ifPresent(logos::delete);
+        media.remove(com.amsati.shopscale.media.MediaKeys.Kind.STORE_LOGO, bid);
         s.setLogoType(null);
         s.setUpdatedAt(Instant.now());
         return profileDto(bid, s);
@@ -146,10 +154,14 @@ public class StoreExtrasService {
         var live = orderService.live(slug);
         String type = live.settings().getLogoType();
         if (type == null) return Optional.empty();
-        return logos.findById(live.business().getId()).map(l -> new LogoFile(type, l.getData()));
+        UUID bid = live.business().getId();
+        var ref = media.verifiedRef(com.amsati.shopscale.media.MediaKeys.Kind.STORE_LOGO, bid);
+        if (ref.isPresent()) return Optional.of(new LogoFile(ref.get().contentType(), null, ref.get()));
+        return logos.findById(bid).filter(l -> l.getData() != null).map(l -> new LogoFile(type, l.getData(), null));
     }
 
-    public record LogoFile(String type, byte[] data) {}
+    /** Either the bytes (database) or a reference to the R2 object. */
+    public record LogoFile(String type, byte[] data, com.amsati.shopscale.media.MediaService.Ref ref) {}
 
     // ---------- sale prices, specs, gallery (merchant) ----------
     private Product mine(UUID productId) {
@@ -218,8 +230,9 @@ public class StoreExtrasService {
         Product p = mine(productId);
         if (bytes == null || bytes.length == 0) throw ApiException.badRequest("Choose an image");
         if (bytes.length > 600 * 1024) throw ApiException.badRequest("The image is too large. Use one under 600 KB.");
-        String type = ProductImageController.sniff(bytes);
-        if (type == null) throw ApiException.badRequest("Use a JPEG, PNG or WebP image");
+        var info = com.amsati.shopscale.media.ImageProcessor.inspect(bytes);
+        if (info == null) throw ApiException.badRequest("Use a valid JPEG, PNG or WebP image");
+        String type = info.contentType();
         List<ProductImage> cur = galleryOf(bid, productId);
         if (cur.size() >= MAX_GALLERY) throw ApiException.badRequest("A product can have up to " + MAX_GALLERY + " extra photos");
         ProductImage img = new ProductImage();
@@ -227,10 +240,12 @@ public class StoreExtrasService {
         img.setProductId(productId);
         img.setContentType(type);
         img.setSizeBytes(bytes.length);
-        img.setData(bytes);
+        boolean toR2 = media.r2Active();
+        if (!toR2) img.setData(bytes);
         img.setGallery(true);
         img.setPosition(cur.size());
-        images.save(img);
+        img = images.save(img);
+        if (toR2 && !media.storeNew(bid, com.amsati.shopscale.media.MediaKeys.Kind.PRODUCT_IMAGE, img.getId(), productId, bytes, type)) img.setData(bytes);
         return presentationDto(p);
     }
 
@@ -240,6 +255,7 @@ public class StoreExtrasService {
         Product p = mine(productId);
         ProductImage img = images.findByIdAndBusinessId(imageId, bid).filter(i -> productId.equals(i.getProductId()) && i.isGallery()).orElseThrow(() -> ApiException.notFound("Photo not found"));
         images.delete(img);
+        media.remove(com.amsati.shopscale.media.MediaKeys.Kind.PRODUCT_IMAGE, img.getId());
         return presentationDto(p);
     }
 

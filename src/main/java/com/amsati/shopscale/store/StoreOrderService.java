@@ -120,6 +120,7 @@ public class StoreOrderService {
 
     Live live(String slug) {
         Business b = businesses.findBySlug(slug == null ? "" : slug.toLowerCase()).orElseThrow(() -> ApiException.notFound("This store is not available"));
+        if ("SUSPENDED".equals(b.getStatus())) throw ApiException.notFound("This store is not available");   // suspended by the platform
         StoreSettings s = settingsRepo.findById(b.getId()).filter(StoreSettings::isEnabled).orElseThrow(() -> ApiException.notFound("This store is not available"));
         if (!subscriptions.state(b.getId()).hasFeature("STOREFRONT")) throw ApiException.notFound("This store is not available");
         return new Live(b, s);

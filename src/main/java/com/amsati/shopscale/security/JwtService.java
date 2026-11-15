@@ -48,4 +48,22 @@ public class JwtService {
             bid == null ? null : UUID.fromString(bid),
             role == null ? null : Role.valueOf(role));
     }
+
+    /** What a Super Admin token asserts. It is only a claim: the backend still checks the session row and the account on every request. */
+    public record AdminClaims(UUID userId, String email, UUID sessionId) {}
+
+    /** A short-lived platform token. It has no business id, so no tenant endpoint accepts it as a merchant. */
+    public String createAdminToken(UUID userId, String email, UUID sessionId, Instant expires) {
+        return Jwts.builder().subject(userId.toString()).claim("email", email).claim("plat", "SUPER_ADMIN").claim("sid", sessionId.toString())
+            .issuedAt(Date.from(Instant.now())).expiration(Date.from(expires)).signWith(key).compact();
+    }
+
+    /** Null when the token is not a valid, unexpired Super Admin token. */
+    public AdminClaims parseAdmin(String token) {
+        try {
+            Claims c = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+            if (!"SUPER_ADMIN".equals(c.get("plat", String.class)) || c.get("sid", String.class) == null) return null;
+            return new AdminClaims(UUID.fromString(c.getSubject()), c.get("email", String.class), UUID.fromString(c.get("sid", String.class)));
+        } catch (Exception e) { return null; }
+    }
 }

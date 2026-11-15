@@ -17,14 +17,14 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class StoreExtrasController {
     private final StoreExtrasService extras;
+    private final com.amsati.shopscale.media.MediaService media;
 
     // ----- public -----
     @GetMapping("/api/public/store/{slug}/logo")
     public ResponseEntity<byte[]> logo(@PathVariable String slug) {
         LogoFile s = extras.logoOf(slug).orElseThrow(() -> ApiException.notFound("No logo"));
-        return ResponseEntity.ok().contentType(MediaType.parseMediaType(s.type()))
-            .header("X-Content-Type-Options", "nosniff").header("Content-Security-Policy", "default-src 'none'")
-            .cacheControl(CacheControl.maxAge(Duration.ofDays(30)).cachePublic()).body(s.data());
+        if (s.ref() != null) return com.amsati.shopscale.media.MediaHttp.fromR2(media, s.ref(), null, Duration.ofDays(1));
+        return com.amsati.shopscale.media.MediaHttp.bytes(s.type(), s.data(), Duration.ofDays(30));
     }
 
     @GetMapping("/api/public/store/{slug}/reviews") public List<ReviewDto> reviews(@PathVariable String slug, @RequestParam UUID productId) { return extras.publicReviews(slug, productId); }

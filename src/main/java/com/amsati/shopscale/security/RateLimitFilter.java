@@ -21,14 +21,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest req) {
         String p = req.getRequestURI();
-        return !(p.equals("/api/auth/login") || p.equals("/api/auth/register") || p.equals("/api/auth/refresh") || p.equals("/api/auth/forgot-password") || p.equals("/api/auth/reset-password") || p.equals("/api/auth/verify-email") || p.equals("/api/auth/resend-verification")
+        return !(p.equals("/api/auth/login") || p.equals("/api/super-admin/auth/login") || p.equals("/api/auth/register") || p.equals("/api/auth/refresh") || p.equals("/api/auth/forgot-password") || p.equals("/api/auth/reset-password") || p.equals("/api/auth/verify-email") || p.equals("/api/auth/resend-verification")
             || (p.startsWith("/api/public/store/") && req.getMethod().equals("POST")) || (p.startsWith("/api/public/orders/") && req.getMethod().equals("POST")) || p.equals("/api/public/partners/click") || (p.equals("/api/partners/apply") || p.equals("/api/partners/withdrawals") || p.startsWith("/api/admin/partners/withdrawals/")) && !req.getMethod().equals("GET") || p.endsWith("/bank-details") || p.equals("/api/team/invitations/accept") || p.equals("/api/team/invitations/preview"));
     }
 
     /** Per address and per endpoint group, so resending a confirmation email never uses up someone's sign-in attempts. */
     static String key(HttpServletRequest req) {
         String p = req.getRequestURI();
-        String group = p.equals("/api/auth/register") ? "register" : p.equals("/api/auth/resend-verification") ? "resend"
+        String group = p.equals("/api/super-admin/auth/login") ? "adminlogin" : p.equals("/api/auth/register") ? "register" : p.equals("/api/auth/resend-verification") ? "resend"
             : p.equals("/api/auth/forgot-password") ? "forgot" : p.equals("/api/public/partners/click") ? "click"
             : p.startsWith("/api/partners/") || p.startsWith("/api/admin/partners/") ? "partner" : "other";
         return req.getRemoteAddr() + "|" + group;

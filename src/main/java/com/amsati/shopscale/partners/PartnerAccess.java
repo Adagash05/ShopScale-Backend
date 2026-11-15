@@ -28,6 +28,12 @@ public class PartnerAccess {
         this.users = users;
     }
 
+    private com.amsati.shopscale.superadmin.SuperAdminAccess superAdmin;
+
+    /** The Super Admin Console runs the same partner administration with its own token. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSuperAdmin(com.amsati.shopscale.superadmin.SuperAdminAccess s) { this.superAdmin = s; }
+
     public Set<String> adminEmails() { return adminEmails; }
 
     /** Any signed-in account (affiliate endpoints then check the account's own partner record). */
@@ -37,6 +43,7 @@ public class PartnerAccess {
     }
 
     public boolean admin() {
+        if (superAdmin != null && superAdmin.ok()) return true;
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         if (a == null || !(a.getPrincipal() instanceof AuthPrincipal p) || p.email() == null) return false;
         if (!adminEmails.contains(p.email().trim().toLowerCase(Locale.ROOT))) return false;

@@ -3,6 +3,10 @@ package com.amsati.shopscale.store;
 import com.amsati.shopscale.catalog.Product;
 import com.amsati.shopscale.catalog.ProductRepository;
 import com.amsati.shopscale.common.ApiException;
+import com.amsati.shopscale.media.ImageProcessor;
+import com.amsati.shopscale.media.MediaHttp;
+import com.amsati.shopscale.media.MediaKeys.Kind;
+import com.amsati.shopscale.media.MediaService;
 import com.amsati.shopscale.security.Tenant;
 import java.io.IOException;
 import java.time.Instant;
@@ -22,6 +26,7 @@ public class ProductImageController {
     private static final int MAX_BYTES = 600 * 1024;
     private final ProductImageRepository images;
     private final ProductRepository products;
+    private final MediaService media;
     @Value("${app.public-api-url:}") private String publicApiUrl;
 
     @PostMapping("/api/products/{id}/image")
@@ -33,16 +38,20 @@ public class ProductImageController {
         byte[] bytes = file.getBytes();
         if (bytes.length == 0) throw ApiException.badRequest("Choose an image");
         if (bytes.length > MAX_BYTES) throw ApiException.badRequest("The image is too large. Use one under 600 KB.");
-        String type = sniff(bytes);
-        if (type == null) throw ApiException.badRequest("Use a JPEG, PNG or WebP image");
+        var info = ImageProcessor.inspect(bytes);
+        if (info == null) throw ApiException.badRequest("Use a valid JPEG, PNG or WebP image");
+        String type = info.contentType();
         dropCurrent(p, bid);
         ProductImage img = new ProductImage();
         img.setBusinessId(bid);
         img.setProductId(id);
         img.setContentType(type);
         img.setSizeBytes(bytes.length);
-        img.setData(bytes);
+        boolean toR2 = media.r2Active();
+        if (!toR2) img.setData(bytes);
         img = images.save(img);
+        // New pictures go to R2 when it is configured and verified; if R2 fails the bytes stay in the database so the upload still succeeds.
+        if (toR2 && !media.storeNew(bid, Kind.PRODUCT_IMAGE, img.getId(), id, bytes, type)) img.setData(bytes);
         String url = publicApiUrl.replaceAll("/+$", "") + "/api/public/images/" + img.getId();
         p.setImageUrl(url);
         p.setUpdatedAt(Instant.now());
@@ -67,23 +76,21 @@ public class ProductImageController {
         if (at < 0) return;
         try {
             UUID old = UUID.fromString(url.substring(at + "/api/public/images/".length()));
-            images.findByIdAndBusinessId(old, bid).filter(i -> !i.isGallery() && p.getId().equals(i.getProductId())).ifPresent(images::delete);
+            images.findByIdAndBusinessId(old, bid).filter(i -> !i.isGallery() && p.getId().equals(i.getProductId())).ifPresent(i -> { images.delete(i); media.remove(Kind.PRODUCT_IMAGE, i.getId()); });
         } catch (IllegalArgumentException ignored) { /* an external or malformed URL: nothing of ours to delete */ }
     }
 
     @GetMapping("/api/public/images/{id}")
     @Transactional(readOnly = true)
-    public ResponseEntity<byte[]> serve(@PathVariable UUID id) {
+    public ResponseEntity<byte[]> serve(@PathVariable UUID id, @RequestParam(value = "size", required = false) String size) {
+        var ref = media.verifiedRef(Kind.PRODUCT_IMAGE, id);
+        if (ref.isPresent()) return MediaHttp.fromR2(media, ref.get(), size, java.time.Duration.ofDays(1));
         ProductImage img = images.findById(id).orElseThrow(() -> ApiException.notFound("Image not found"));
+        if (img.getData() == null) throw ApiException.notFound("Image not found");
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(img.getContentType()))
-            .header("X-Content-Type-Options", "nosniff").header("Content-Security-Policy", "default-src 'none'")
-            .cacheControl(CacheControl.maxAge(java.time.Duration.ofDays(30)).cachePublic().immutable()).body(img.getData());
+                .header("X-Content-Type-Options", "nosniff").header("Content-Security-Policy", "default-src 'none'")
+                .cacheControl(CacheControl.maxAge(java.time.Duration.ofDays(30)).cachePublic().immutable()).body(img.getData());
     }
 
-    static String sniff(byte[] b) {
-        if (b.length > 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF) return "image/jpeg";
-        if (b.length > 8 && (b[0] & 0xFF) == 0x89 && b[1] == 'P' && b[2] == 'N' && b[3] == 'G') return "image/png";
-        if (b.length > 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P') return "image/webp";
-        return null;
-    }
+    static String sniff(byte[] b) { return ImageProcessor.sniff(b); }
 }

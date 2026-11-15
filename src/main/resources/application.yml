@@ -60,11 +60,26 @@ app:
     secret-key: ${PAYSTACK_SECRET_KEY:}
   encryption-key: ${APP_ENCRYPTION_KEY:}
   invitation-ttl-days: 7
-  platform-admin:
-    # One-time creation of the FIRST platform administrator (see docs/PLATFORM_ADMIN.md). Leave both empty after the first start.
-    bootstrap-email: ${PLATFORM_ADMIN_BOOTSTRAP_EMAIL:}
-    bootstrap-password: ${PLATFORM_ADMIN_BOOTSTRAP_PASSWORD:}
-    bootstrap-name: ${PLATFORM_ADMIN_BOOTSTRAP_NAME:Platform Administrator}
+  super-admin:
+    # One-time provisioning of the platform owner's account (see docs/SUPER_ADMIN_SETUP.md). Leave both empty after the first start.
+    email: ${SHOPSCALE_SUPER_ADMIN_EMAIL:}
+    initial-password: ${SHOPSCALE_SUPER_ADMIN_INITIAL_PASSWORD:}
+    name: ${SHOPSCALE_SUPER_ADMIN_NAME:Platform Owner}
+    session-minutes: ${SHOPSCALE_SUPER_ADMIN_SESSION_MINUTES:30}
+  media:
+    # AUTO: new images go to Cloudflare R2 when every CLOUDFLARE_R2_* variable below is set. DB: always store in PostgreSQL (use this to roll back).
+    mode: ${MEDIA_STORAGE_MODE:AUTO}
+    # REDIRECT: /api/public/images/{id} redirects to the public image domain. PROXY: the API streams the image itself.
+    serve-mode: ${MEDIA_SERVE_MODE:REDIRECT}
+    r2:
+      account-id: ${CLOUDFLARE_R2_ACCOUNT_ID:}
+      access-key-id: ${CLOUDFLARE_R2_ACCESS_KEY_ID:}
+      secret-access-key: ${CLOUDFLARE_R2_SECRET_ACCESS_KEY:}
+      bucket-name: ${CLOUDFLARE_R2_BUCKET_NAME:}
+      # Optional: defaults to https://<account-id>.r2.cloudflarestorage.com
+      endpoint: ${CLOUDFLARE_R2_ENDPOINT:}
+      # The public address of the bucket, for example https://img.shopscale.com.ng
+      public-base-url: ${CLOUDFLARE_R2_PUBLIC_BASE_URL:}
   partners:
     # Accounts (verified email) allowed to run ShopScale Partners administration. Comma separated.
     admin-emails: ${PLATFORM_ADMIN_EMAILS:}

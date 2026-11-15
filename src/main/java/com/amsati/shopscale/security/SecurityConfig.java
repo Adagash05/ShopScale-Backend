@@ -30,13 +30,13 @@ public class SecurityConfig {
      * SameSite=Strict); the two endpoints that read it (refresh, logout) require a custom header and an allowed Origin.
      */
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, BusinessStatusCache businessStatus) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a -> a
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/verify-email", "/api/team/invitations/accept", "/api/team/invitations/preview",
+                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/super-admin/auth/login", "/api/auth/refresh", "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/auth/verify-email", "/api/team/invitations/accept", "/api/team/invitations/preview",
                     "/api/subscriptions/plans", "/api/public/**", "/api/webhooks/**", "/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/api/**").authenticated()
                 .anyRequest().denyAll())
@@ -46,7 +46,8 @@ public class SecurityConfig {
                 res.getWriter().write("{\"status\":401,\"error\":\"Unauthorized\",\"message\":\"Sign in to continue\"}");
             }))
             .addFilterBefore(new RateLimitFilter(), UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new JwtAuthFilter(jwtService), UsernamePasswordAuthenticationFilter.class)
+            .addFilterAfter(new SuspensionFilter(businessStatus), JwtAuthFilter.class);
         return http.build();
     }
 
