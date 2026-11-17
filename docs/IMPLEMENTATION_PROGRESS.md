@@ -83,3 +83,6 @@ Implemented end to end: applications and approval, referral links with click tra
 
 ## 2026-11-14: checkout, notifications, platform admin, media audit
 Stock notification link fixed, storefront checkout lazy-loading failure fixed, pending-order sweeper, first-admin bootstrap, image storage audit. Details, test status and what still needs staging verification: `PRODUCTION_FIXES_2026-11-14.md`, `PLATFORM_ADMIN.md`, `MEDIA_STORAGE.md`.
+
+## Kitchen, Bakery and Catering (2026-11-16)
+Implemented V26 plus kitchen order lifecycle, wastage, production, restaurant reports and the full catering module. See `docs/KITCHEN_CATERING.md`. Java was not compiled and JUnit/vitest/vite build were not run in the authoring environment (no network, no Maven/npm install); static and SQL-level checks only.

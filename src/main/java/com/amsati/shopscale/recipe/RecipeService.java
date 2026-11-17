@@ -172,4 +172,17 @@ public class RecipeService {
         }
         return Money.scale(cost);
     }
+
+    /** Put ingredients back (an order reversed before anything was made). Never moves money. */
+    @Transactional
+    public void restore(Recipe r, BigDecimal quantity, UUID branchId, String reference, UUID userId) {
+        UUID bid = r.getBusinessId();
+        Map<UUID, BigDecimal> need = requirements(r, quantity);
+        Map<UUID, ProductVariant> vs = variants.lockAll(bid, need.keySet()).stream().collect(Collectors.toMap(ProductVariant::getId, v -> v));
+        for (Map.Entry<UUID, BigDecimal> e : need.entrySet()) {
+            stock.apply(vs.get(e.getKey()), branchId, MovementType.REFUND, e.getValue(), "Order reversed before it was made", reference, userId, true);
+        }
+    }
+
+    public Optional<Recipe> find(UUID bid, UUID variantId) { return recipes.findByBusinessIdAndVariantId(bid, variantId); }
 }

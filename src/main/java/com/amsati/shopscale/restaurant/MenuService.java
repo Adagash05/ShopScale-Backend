@@ -29,6 +29,7 @@ public class MenuService {
     private final ModifierRepository modifiers;
     private final ProductModifierGroupRepository links;
     private final RestaurantTableRepository tables;
+    private final KitchenOrderRepository kitchenOrders;
     private final ProductRepository products;
     private final ProductVariantRepository variants;
     private final IndustryGuard industry;
@@ -184,7 +185,22 @@ public class MenuService {
         RestaurantTable t = tables.findByIdAndBusinessId(id, bid).orElseThrow(() -> ApiException.notFound("Table not found"));
         t.setName(r.name().trim());
         t.setSeats(r.seats());
-        if (active != null) t.setActive(active);
+        if (active != null) {
+            if (!active && kitchenOrders.existsByTableIdAndStatus(t.getId(), "OPEN")) throw ApiException.conflict(t.getName() + " has an open order. Finish or cancel it first.");
+            t.setActive(active);
+        }
         return new TableDto(t.getId(), t.getName(), t.getSeats(), t.isActive());
+    }
+
+    /** Marks a menu item sold out (or available again). It stays on the menu but cannot be ordered or sold while sold out. */
+    @Transactional
+    public boolean setSoldOut(UUID productId, boolean soldOut) {
+        UUID bid = Tenant.businessId();
+        com.amsati.shopscale.catalog.Product p = products.findByIdAndBusinessId(productId, bid).orElseThrow(() -> ApiException.notFound("Menu item not found"));
+        if (p.isSoldOut() != soldOut) {
+            p.setSoldOut(soldOut);
+            audit.record(bid, Tenant.userId(), soldOut ? "MENU_ITEM_SOLD_OUT" : "MENU_ITEM_AVAILABLE", "product", p.getId(), p.getName());
+        }
+        return p.isSoldOut();
     }
 }

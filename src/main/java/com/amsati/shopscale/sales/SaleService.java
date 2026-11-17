@@ -176,6 +176,7 @@ public class SaleService {
             Product p = productById.get(v.getProduct().getId());
             String display = displayName(p, v);
             if (!v.isActive() || p.getStatus() != ProductStatus.ACTIVE) throw ApiException.badRequest(display + " is no longer for sale");
+            if (p.isSoldOut()) throw ApiException.conflict(display + " is sold out");
             Recipe made = madeToOrder.get(v.getId());
             if (made != null) {
                 recipeService.requireIngredients(made, e.getValue(), branchId, business.isAllowNegativeStock());

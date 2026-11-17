@@ -88,7 +88,7 @@ app:
   mail:
     from: ${MAIL_FROM:}
   business:
-    enabled-types: RETAIL,WHOLESALE,RESTAURANT,CATERING,SMALL_CHOPS,PRODUCTION,LIVESTOCK
+    enabled-types: RETAIL,WHOLESALE,RESTAURANT,BAKERY,CATERING,SMALL_CHOPS,PRODUCTION,LIVESTOCK
   billing:
     auto-charge-enabled: ${BILLING_AUTO_CHARGE_ENABLED:true}
     retry-delays-hours: ${BILLING_RETRY_DELAYS_HOURS:24,48}

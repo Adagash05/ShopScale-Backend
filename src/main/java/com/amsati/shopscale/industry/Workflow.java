@@ -14,6 +14,7 @@ public enum Workflow {
             case RETAIL -> EnumSet.of(RETAIL, ONLINE);
             case WHOLESALE -> EnumSet.of(RETAIL, WHOLESALE, ONLINE);
             case RESTAURANT -> EnumSet.of(RESTAURANT, RETAIL, ONLINE);
+            case BAKERY -> EnumSet.of(RESTAURANT, PRODUCTION, RETAIL, ONLINE);
             case CATERING, SMALL_CHOPS -> EnumSet.of(CATERING, PRODUCTION, RETAIL, ONLINE);
             case PRODUCTION -> EnumSet.of(PRODUCTION, WHOLESALE, RETAIL, ONLINE);
             // Livestock is recorded as the owner's choice. Only the general tools are active for it today.

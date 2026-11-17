@@ -43,11 +43,11 @@ public final class CatalogDtos {
 
     public record ProductDto(UUID id, String name, String description, String imageUrl, UUID categoryId,
                              String categoryName, ProductStatus status, List<VariantDto> variants, BigDecimal totalQuantity,
-                             Instant createdAt, String kind) {}
+                             Instant createdAt, String kind, boolean soldOut) {}
 
     public record CategoryDto(UUID id, String name) {}
 
     public record PosItemDto(UUID variantId, UUID productId, String productName, String label, String sku,
                              BigDecimal price, BigDecimal quantity, String unit, boolean allowDecimal,
-                             String kind, boolean madeToOrder) {}
+                             String kind, boolean madeToOrder, boolean soldOut) {}
 }

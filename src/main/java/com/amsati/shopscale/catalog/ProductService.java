@@ -99,7 +99,7 @@ public class ProductService {
             List<VariantDto> vs = byProduct.getOrDefault(p.getId(), List.of()).stream().map(ProductService::toDto).toList();
             BigDecimal total = vs.stream().map(VariantDto::quantity).reduce(BigDecimal.ZERO, BigDecimal::add);
             return new ProductDto(p.getId(), p.getName(), p.getDescription(), p.getImageUrl(), p.getCategoryId(),
-                p.getCategoryId() == null ? null : categoryNames.get(p.getCategoryId()), p.getStatus(), vs, total, p.getCreatedAt(), p.getKind());
+                p.getCategoryId() == null ? null : categoryNames.get(p.getCategoryId()), p.getStatus(), vs, total, p.getCreatedAt(), p.getKind(), p.isSoldOut());
         });
     }
 
@@ -121,7 +121,7 @@ public class ProductService {
         return found.stream().filter(v -> !"INGREDIENT".equals(v.getProduct().getKind()))
             .map(v -> new PosItemDto(v.getId(), v.getProduct().getId(), v.getProduct().getName(), v.getLabel(),
                 v.getSku(), shown.getOrDefault(v.getId(), v.getPrice()), here.getOrDefault(v.getId(), BigDecimal.ZERO), v.getUnit(), v.isAllowDecimal(),
-                v.getProduct().getKind(), mto.contains(v.getId()))).toList();
+                v.getProduct().getKind(), mto.contains(v.getId()), v.getProduct().isSoldOut())).toList();
     }
 
     /** GOODS is plain stock. MENU, INGREDIENT and FINISHED belong to restaurant, catering and production businesses. */

@@ -21,6 +21,8 @@ public class Product {
     /** One "Label: value" per line, shown on the product page in the online store. */
     private String specs;
     private String kind = "GOODS";
+    /** Menu item marked sold out: it stays on the menu but cannot be ordered or sold until switched back. */
+    private boolean soldOut = false;
     @Enumerated(EnumType.STRING)
     private ProductStatus status = ProductStatus.ACTIVE;
     private Instant createdAt = Instant.now();

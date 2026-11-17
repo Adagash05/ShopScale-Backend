@@ -24,4 +24,10 @@ public class KitchenOrderItem {
     private String note;
     private String status = "NEW";
     private Instant createdAt = Instant.now();
+    private Instant startedAt;
+    private Instant readyAt;
+    private Instant servedAt;
+    private Instant cancelledAt;
+    private String cancelReason;
+    private boolean wasted;
 }

@@ -36,7 +36,7 @@ public class BusinessService {
     private final com.amsati.shopscale.branch.BranchRepository branches;
     private final com.amsati.shopscale.finance.FinanceService finance;
 
-    @Value("${app.business.enabled-types:RETAIL}")
+    @Value("${app.business.enabled-types:RETAIL,WHOLESALE,RESTAURANT,BAKERY,CATERING,SMALL_CHOPS,PRODUCTION}")
     private String enabledTypes;
 
     public record CreateRequest(

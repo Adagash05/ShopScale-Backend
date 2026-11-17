@@ -25,4 +25,13 @@ public class KitchenOrder {
     private UUID saleId;
     private UUID createdBy;
     private Instant createdAt = Instant.now();
+    private Instant acceptedAt;
+    private UUID acceptedBy;
+    private Instant closedAt;
+    private String cancelReason;
+    private UUID cancelledBy;
+    private Instant reversedAt;
+    private String reverseReason;
+    private UUID reversedBy;
+    private String clientRequestId;
 }
