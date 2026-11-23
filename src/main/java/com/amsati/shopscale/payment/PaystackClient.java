@@ -38,8 +38,12 @@ public class PaystackClient {
             b = "POST".equals(method) ? b.POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))) : b.GET();
             HttpResponse<String> res = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
             JsonNode node = json.readTree(res.body());
-            if (res.statusCode() == 401) throw ApiException.badRequest("Paystack did not accept this secret key. Check it and try again.");
+            if (res.statusCode() == 401) {
+                log.warn("Paystack {} {} -> HTTP 401: the secret key was rejected", method, path);
+                throw ApiException.badRequest("Paystack did not accept this secret key. Check it and try again.");
+            }
             if (res.statusCode() >= 400 || !node.path("status").asBoolean(false)) {
+                log.warn("Paystack {} {} -> HTTP {}: {}", method, path, res.statusCode(), node.path("message").asText("(no message)"));
                 throw ApiException.badRequest("Paystack: " + node.path("message").asText("request failed"));
             }
             return node;
@@ -47,7 +51,7 @@ public class PaystackClient {
             throw e;
         } catch (java.io.IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            log.warn("Paystack call failed: {}", e.getClass().getSimpleName());
+            log.warn("Paystack {} {} could not be completed: {}", method, path, e.getClass().getSimpleName());
             throw ApiException.conflict("Could not reach Paystack. Try again in a moment.");
         }
     }

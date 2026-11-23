@@ -70,4 +70,26 @@ public interface SaleRepository extends JpaRepository<Sale, UUID> {
         + "from Sale s where s.businessId = :b and s.status = :status and s.createdAt >= :from and s.createdAt < :to")
     SalesAggregate aggregate(@Param("b") UUID b, @Param("status") SaleStatus status,
                              @Param("from") Instant from, @Param("to") Instant to);
+
+    interface CustomerSales {
+        UUID getCustomerId();
+        String getName();
+        Long getTransactions();
+        BigDecimal getPurchases();
+        BigDecimal getPaid();
+    }
+
+    /** Net sales per named customer in a period (refunds taken off), biggest first. Walk-in sales have no customer and are not ranked. */
+    @Query("select s.customerId as customerId, c.name as name, count(s) as transactions, sum(s.total - s.refundedAmount) as purchases, sum(s.amountPaid) as paid "
+        + "from Sale s join Customer c on c.id = s.customerId where s.businessId = :b and c.businessId = :b and s.status = :status "
+        + "and s.createdAt >= :from and s.createdAt < :to group by s.customerId, c.name order by sum(s.total - s.refundedAmount) desc")
+    List<CustomerSales> bestCustomers(@Param("b") UUID b, @Param("status") SaleStatus status, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** Credit still unpaid on the sales of a period. */
+    @Query("select sum(s.amountOwed) from Sale s where s.businessId = :b and s.status = :status and s.createdAt >= :from and s.createdAt < :to and s.amountOwed > 0")
+    BigDecimal unpaidBetween(@Param("b") UUID b, @Param("status") SaleStatus status, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** When the oldest sale that still has an unpaid balance was made. Null when nobody owes anything. */
+    @Query("select min(s.createdAt) from Sale s where s.businessId = :b and s.status = :status and s.amountOwed > 0")
+    Instant oldestUnpaid(@Param("b") UUID b, @Param("status") SaleStatus status);
 }

@@ -60,15 +60,17 @@ public class InvoiceService {
     private final CounterService counters;
     private final FinanceService finance;
     private final AuditService audit;
+    private final com.amsati.shopscale.catalog.ProductVariantRepository variantRepo;
 
     @Value("${app.public-api-url:}") private String publicApiUrl;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int MAX_LOGO_BYTES = 300_000;
 
     // ---------- requests / responses ----------
-    public record LineRequest(@NotBlank @Size(max = 300) String description,
+    /** A line is either a product (variantId: name and price come from the catalogue on the server) or a free line (description and unitPrice). */
+    public record LineRequest(UUID variantId, @Size(max = 300) String description,
                               @NotNull @DecimalMin("0.001") @Digits(integer = 11, fraction = 3) BigDecimal quantity,
-                              @NotNull @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal unitPrice,
+                              @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal unitPrice,
                               @DecimalMin("0") @Digits(integer = 12, fraction = 2) BigDecimal discount,
                               @DecimalMin("0") @DecimalMax("100") BigDecimal taxRate) {}
 
@@ -77,7 +79,8 @@ public class InvoiceService {
                                  LocalDate issueDate, LocalDate dueDate, @Size(max = 200) String paymentTerms,
                                  @Size(max = 1000) String note, @Size(max = 1000) String paymentInstructions,
                                  @DecimalMin("0") BigDecimal invoiceDiscount,
-                                 UUID sourceSaleId, UUID sourceDocumentId, @Valid @Size(max = 200) List<LineRequest> items) {}
+                                 UUID sourceSaleId, UUID sourceDocumentId, @Valid @Size(max = 200) List<LineRequest> items,
+                                 @Size(max = 64) String clientRequestId) {}
 
     public record PaymentRequest(@NotNull @DecimalMin("0.01") @Digits(integer = 12, fraction = 2) BigDecimal amount,
                                  @NotNull PaymentMethod method, @Size(max = 300) String note, @Size(max = 64) String clientRequestId) {}
@@ -116,7 +119,15 @@ public class InvoiceService {
     @Transactional
     public InvoiceDto create(InvoiceRequest r) {
         UUID bid = Tenant.businessId();
+        // A repeated submission (double tap, retry after a slow network) returns the invoice that was already created.
+        String requestId = blankToNull(r.clientRequestId());
+        if (requestId != null) {
+            invoices.lockCreateRequest(bid + ":invoice:" + requestId);   // a second identical request waits here, then finds the first invoice below
+            var prior = invoices.findByBusinessIdAndClientRequestId(bid, requestId);
+            if (prior.isPresent()) return dto(prior.get());
+        }
         Invoice inv = new Invoice();
+        inv.setClientRequestId(requestId);
         inv.setBusinessId(bid);
         inv.setCreatedBy(Tenant.userId());
         inv.setShareToken(newToken());
@@ -192,18 +203,37 @@ public class InvoiceService {
         }
     }
 
+    /** One line after the server has decided its description and price. */
+    private record Resolved(String description, BigDecimal unitPrice) {}
+
+    private Resolved resolve(LineRequest l, UUID bid) {
+        if (l.variantId() != null) {
+            var v = variantRepo.findById(l.variantId()).filter(x -> bid.equals(x.getBusinessId()) && x.isActive())
+                .orElseThrow(() -> ApiException.badRequest("One of the products was not found"));
+            String name = v.getProduct().getName() + (v.getLabel() == null || v.getLabel().isBlank() || "Default".equalsIgnoreCase(v.getLabel()) ? "" : " - " + v.getLabel());
+            String text = l.description() != null && !l.description().isBlank() ? l.description().trim() : name;
+            return new Resolved(text, v.getPrice());   // the catalogue price: a price sent by the browser is ignored for product lines
+        }
+        if (l.description() == null || l.description().isBlank()) throw ApiException.badRequest("Each item needs a description");
+        if (l.unitPrice() == null) throw ApiException.badRequest("Each item needs a price");
+        return new Resolved(l.description().trim(), l.unitPrice());
+    }
+
     private void applyStandalone(Invoice inv, InvoiceRequest r, List<InvoiceItem> lines) {
         if (r.items() == null || r.items().isEmpty()) throw ApiException.badRequest("Add at least one item");
-        List<InvoiceMath.LineIn> in = r.items().stream().map(l -> new InvoiceMath.LineIn(l.quantity(), l.unitPrice(), l.discount(), l.taxRate())).toList();
+        UUID bid = inv.getBusinessId();
+        List<Resolved> res = r.items().stream().map(l -> resolve(l, bid)).toList();
+        List<InvoiceMath.LineIn> in = new ArrayList<>();
+        for (int k = 0; k < r.items().size(); k++) { LineRequest l = r.items().get(k); in.add(new InvoiceMath.LineIn(l.quantity(), res.get(k).unitPrice(), l.discount(), l.taxRate())); }
         InvoiceMath.Totals t;
         try { t = InvoiceMath.compute(in, r.invoiceDiscount()); } catch (IllegalArgumentException e) { throw ApiException.badRequest(e.getMessage()); }
         for (int k = 0; k < r.items().size(); k++) {
             LineRequest l = r.items().get(k);
             InvoiceItem it = new InvoiceItem();
             it.setPosition(k);
-            it.setDescription(l.description().trim());
+            it.setDescription(res.get(k).description());
             it.setQuantity(l.quantity());
-            it.setUnitPrice(InvoiceMath.money(l.unitPrice()));
+            it.setUnitPrice(InvoiceMath.money(res.get(k).unitPrice()));
             it.setDiscount(InvoiceMath.money(l.discount()));
             it.setTaxRate(l.taxRate() == null ? BigDecimal.ZERO : l.taxRate());
             it.setLineTotal(t.lines().get(k).net());

@@ -21,4 +21,6 @@ public interface CustomerPaymentRepository extends JpaRepository<CustomerPayment
 
     @Query("select sum(p.amount) from CustomerPayment p where p.businessId = :b and p.createdAt >= :from and p.createdAt < :to")
     BigDecimal sumBetween(@Param("b") UUID b, @Param("from") Instant from, @Param("to") Instant to);
+
+    List<CustomerPayment> findTop8ByBusinessIdOrderByCreatedAtDesc(UUID businessId);
 }

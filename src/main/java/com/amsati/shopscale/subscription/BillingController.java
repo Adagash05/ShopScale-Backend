@@ -17,7 +17,7 @@ public class BillingController {
     public Quote quote(@RequestParam String plan, @RequestParam(required = false) BillingCycle cycle) { return billing.preview(plan, cycle); }
 
     @GetMapping("/api/subscriptions/billing-status") @PreAuthorize("@access.has('SUBSCRIPTION_VIEW')")
-    public Map<String, Boolean> status() { return Map.of("configured", billing.configured()); }
+    public Map<String, Object> status() { return billing.configStatus(); }
 
     @PostMapping("/api/subscriptions/checkout") @PreAuthorize("@access.has('SUBSCRIPTION_MANAGE')")
     public Checkout checkout(@RequestBody CheckoutRequest r) { return billing.checkout(r); }

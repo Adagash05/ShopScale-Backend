@@ -30,4 +30,7 @@ public interface CustomerRepository extends JpaRepository<Customer, UUID> {
 
     @Query("select sum(c.balance) from Customer c where c.businessId = :b and c.balance > 0")
     BigDecimal outstanding(@Param("b") UUID b);
+
+    @Query("select count(c) from Customer c where c.businessId = :b and c.balance > 0")
+    long countOwing(@Param("b") UUID b);
 }

@@ -13,6 +13,7 @@ public record DateRange(LocalDate from, LocalDate to) {
         return switch (p) {
             case "today" -> new DateRange(today, today);
             case "yesterday" -> new DateRange(today.minusDays(1), today.minusDays(1));
+            case "thisweek" -> new DateRange(today.minusDays(today.getDayOfWeek().getValue() - 1L), today);
             case "last7" -> new DateRange(today.minusDays(6), today);
             case "last30" -> new DateRange(today.minusDays(29), today);
             case "thismonth" -> new DateRange(today.withDayOfMonth(1), today);

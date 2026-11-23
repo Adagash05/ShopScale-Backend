@@ -42,4 +42,5 @@ public class Invoice {
     private Instant updatedAt = Instant.now();
     private Instant sentAt;
     private Instant cancelledAt;
+    private String clientRequestId;
 }

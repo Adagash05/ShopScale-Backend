@@ -46,4 +46,16 @@ public interface SaleItemRepository extends JpaRepository<SaleItem, UUID> {
         + "and i.sale.createdAt < :to group by i.productName order by sum(i.quantity - i.quantityRefunded) desc")
     List<TopProduct> topProducts(@Param("b") UUID b, @Param("status") SaleStatus status,
                                  @Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
+
+    /** Best sellers by revenue (not by profit), refunds taken off. */
+    @Query("select i.productName as name, sum(i.quantity - i.quantityRefunded) as quantity, sum(i.lineTotal * (i.quantity - i.quantityRefunded) / i.quantity) as revenue "
+        + "from SaleItem i where i.businessId = :b and i.sale.status = :status and i.sale.createdAt >= :from "
+        + "and i.sale.createdAt < :to group by i.productName order by sum(i.lineTotal * (i.quantity - i.quantityRefunded) / i.quantity) desc")
+    List<TopProduct> topByRevenue(@Param("b") UUID b, @Param("status") SaleStatus status,
+                                  @Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
+
+    /** Items sold in the period with no cost price recorded, so profit cannot be exact. */
+    @Query("select count(i) from SaleItem i where i.businessId = :b and i.sale.status = :status and i.sale.createdAt >= :from and i.sale.createdAt < :to "
+        + "and (i.unitCost is null or i.unitCost = 0)")
+    long withoutCost(@Param("b") UUID b, @Param("status") SaleStatus status, @Param("from") Instant from, @Param("to") Instant to);
 }

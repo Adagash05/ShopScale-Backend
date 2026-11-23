@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class DashboardController {
     private final DashboardService service;
+    private final DashboardOverviewService overviewService;
 
     @GetMapping
     @PreAuthorize("@access.has('DASHBOARD_VIEW')")
@@ -21,5 +22,14 @@ public class DashboardController {
                                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                                  @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return service.summary(range, from, to);
+    }
+
+    /** Everything the dashboard page shows: the summary plus comparison, trend, rankings, stock, debts and latest transactions. */
+    @GetMapping("/overview")
+    @PreAuthorize("@access.has('DASHBOARD_VIEW')")
+    public DashboardOverviewService.Overview overview(@RequestParam(defaultValue = "today") String range,
+                                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                                      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return overviewService.overview(range, from, to);
     }
 }

@@ -30,4 +30,13 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
 
     @Query("select sum(e.amount) from Expense e where e.businessId = :b and e.status = 'APPROVED' and e.expenseDate >= :from and e.expenseDate <= :to")
     BigDecimal sumBetween(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    interface CategoryTotal {
+        String getName();
+        BigDecimal getTotal();
+    }
+
+    @Query("select e.category as name, sum(e.amount) as total from Expense e where e.businessId = :b and e.status = 'APPROVED' "
+        + "and e.expenseDate >= :from and e.expenseDate <= :to group by e.category order by sum(e.amount) desc")
+    java.util.List<CategoryTotal> byCategory(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to);
 }

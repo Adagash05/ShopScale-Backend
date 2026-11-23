@@ -43,6 +43,8 @@ management:
 app:
   # production (default) refuses to start with unsafe or missing settings; use development for local work and tests.
   env: ${APP_ENV:production}
+  # V1 product scope: hides the specialised modules (restaurant, catering, branches, ...) from every business. Set V1_SCOPE=false to restore them.
+  v1-scope: ${V1_SCOPE:true}
   jwt:
     secret: ${JWT_SECRET}
     access-ttl-seconds: 900
@@ -88,7 +90,8 @@ app:
   mail:
     from: ${MAIL_FROM:}
   business:
-    enabled-types: RETAIL,WHOLESALE,RESTAURANT,BAKERY,CATERING,SMALL_CHOPS,PRODUCTION,LIVESTOCK
+    # V1 sign-up: trading businesses only. Existing businesses of other types keep their data (hidden by app.v1-scope).
+    enabled-types: ${ENABLED_BUSINESS_TYPES:RETAIL,WHOLESALE}
   billing:
     auto-charge-enabled: ${BILLING_AUTO_CHARGE_ENABLED:true}
     retry-delays-hours: ${BILLING_RETRY_DELAYS_HOURS:24,48}

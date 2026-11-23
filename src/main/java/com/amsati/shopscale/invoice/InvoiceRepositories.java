@@ -17,6 +17,12 @@ interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
 
     Optional<Invoice> findByShareToken(String token);
 
+    Optional<Invoice> findByBusinessIdAndClientRequestId(UUID businessId, String clientRequestId);
+
+    /** Serialises identical create requests for one business until the transaction ends, so two taps at once make one invoice. */
+    @Query(value = "select 1 from (select pg_advisory_xact_lock(hashtextextended(:key, 0))) t", nativeQuery = true)
+    int lockCreateRequest(@Param("key") String key);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from Invoice i where i.id = :id and i.businessId = :b")
     Optional<Invoice> findForUpdate(@Param("id") UUID id, @Param("b") UUID businessId);
@@ -46,3 +52,25 @@ interface InvoicePaymentRepository extends JpaRepository<InvoicePayment, UUID> {
 }
 
 interface InvoiceSettingsRepository extends JpaRepository<InvoiceSettings, UUID> {}
+
+interface InvoiceReportRepository extends JpaRepository<Invoice, UUID> {
+    /*
+     * Money still owed on invoices that are NOT backed by a sale or an order (those are already counted as customer credit / are documents only).
+     * Draft and cancelled invoices are not debt. Plain aggregates: sum() is null when nothing matches, the service turns that into zero.
+     */
+    @Query("select sum(i.total - i.amountPaid) from Invoice i where i.businessId = :b and i.status in ('SENT','PARTIALLY_PAID') and i.amountPaid < i.total and i.sourceSaleId is null and i.sourceDocumentId is null")
+    java.math.BigDecimal openAmount(@Param("b") UUID businessId);
+
+    @Query("select count(i) from Invoice i where i.businessId = :b and i.status in ('SENT','PARTIALLY_PAID') and i.amountPaid < i.total and i.sourceSaleId is null and i.sourceDocumentId is null")
+    long openCount(@Param("b") UUID businessId);
+
+    @Query("select sum(i.total - i.amountPaid) from Invoice i where i.businessId = :b and i.status in ('SENT','PARTIALLY_PAID') and i.amountPaid < i.total and i.dueDate < :today and i.sourceSaleId is null and i.sourceDocumentId is null")
+    java.math.BigDecimal overdueAmount(@Param("b") UUID businessId, @Param("today") LocalDate today);
+
+    @Query("select count(i) from Invoice i where i.businessId = :b and i.status in ('SENT','PARTIALLY_PAID') and i.amountPaid < i.total and i.dueDate < :today and i.sourceSaleId is null and i.sourceDocumentId is null")
+    long overdueCount(@Param("b") UUID businessId, @Param("today") LocalDate today);
+
+    /** Payments taken on standalone invoices in a period. A payment on a sale-backed invoice is already a customer repayment, so it is not counted here. */
+    @Query("select sum(p.amount) from InvoicePayment p, Invoice i where p.invoiceId = i.id and i.businessId = :b and p.businessId = :b and i.sourceSaleId is null and i.sourceDocumentId is null and p.createdAt >= :from and p.createdAt < :to")
+    java.math.BigDecimal standalonePaymentsBetween(@Param("b") UUID businessId, @Param("from") java.time.Instant from, @Param("to") java.time.Instant to);
+}

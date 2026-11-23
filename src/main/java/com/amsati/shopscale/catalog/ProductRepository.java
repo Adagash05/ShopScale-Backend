@@ -21,4 +21,6 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
     @Query("select p from Product p where p.businessId = :b and p.status = :status and p.categoryId = :cat and " + MATCH + " order by p.name")
     Page<Product> searchInCategory(@Param("b") UUID b, @Param("status") ProductStatus status,
                                    @Param("cat") UUID categoryId, @Param("q") String q, Pageable pageable);
+
+    java.util.List<Product> findByBusinessIdAndNameIn(UUID businessId, java.util.Collection<String> names);
 }

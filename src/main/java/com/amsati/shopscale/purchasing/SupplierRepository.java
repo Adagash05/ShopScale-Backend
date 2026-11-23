@@ -25,4 +25,7 @@ public interface SupplierRepository extends JpaRepository<Supplier, UUID> {
 
     @Query("select sum(s.balance) from Supplier s where s.businessId = :b and s.balance > 0")
     BigDecimal totalOwed(@Param("b") UUID b);
+
+    @Query("select count(s) from Supplier s where s.businessId = :b and s.balance > 0")
+    long countOwed(@Param("b") UUID b);
 }

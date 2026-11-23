@@ -71,6 +71,18 @@ public class BillingService {
 
     private TransactionTemplate tx() { return new TransactionTemplate(txm); }
     public boolean configured() { return secretKey != null && !secretKey.isBlank(); }
+    /** What an owner or operator can see about billing setup. Booleans and the key mode only: never a key, never part of one. */
+    public Map<String, Object> configStatus() {
+        String k = secretKey == null ? "" : secretKey.trim();
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("configured", !k.isBlank());
+        m.put("keyLooksValid", k.startsWith("sk_test_") || k.startsWith("sk_live_"));
+        m.put("mode", k.startsWith("sk_live_") ? "live" : k.startsWith("sk_test_") ? "test" : null);
+        m.put("encryptionConfigured", box.isConfigured());
+        m.put("returnUrlConfigured", frontendUrl != null && !frontendUrl.isBlank());
+        return m;
+    }
+
     private void needKey() { if (!configured()) throw ApiException.conflict("Online billing is not set up on this server yet (PAYSTACK_SECRET_KEY)."); }
 
     // ---------- pricing ----------
@@ -149,11 +161,16 @@ public class BillingService {
             if (init.authorizationUrl() == null || !init.authorizationUrl().startsWith("https://")) throw new IllegalStateException("Paystack returned no checkout address");
             return new Checkout(p.getReference(), init.authorizationUrl(), q);
         } catch (RuntimeException e) {
-            log.warn("Subscription checkout failed for {}: {}", bid, e.getMessage());
+            // The reason is logged in full (never the key) so a failure can be diagnosed; the customer gets the safe part of it.
+            log.error("Subscription checkout failed: business={} reference={} plan={} cause={}: {}", bid, p.getReference(), q.planCode(), e.getClass().getSimpleName(), e.getMessage());
             p.setStatus("FAILED");
-            p.setFailureNote("Could not start payment");
+            p.setFailureNote(trim(e instanceof ApiException ? e.getMessage() : "Could not start payment", 200));
             p.setUpdatedAt(Instant.now());
             payments.save(p);
+            if (e instanceof ApiException ae && ae.getMessage() != null && ae.getMessage().startsWith("Paystack did not accept")) {
+                throw ApiException.conflict("Online payment is not working on our side right now (the payment provider key was refused). Please contact ShopScale support.");
+            }
+            if (e instanceof ApiException ae && ae.getStatus() == org.springframework.http.HttpStatus.CONFLICT) throw ae;   // "Could not reach Paystack": say so
             throw ApiException.conflict("We could not start the payment. Please try again.");
         }
     }
