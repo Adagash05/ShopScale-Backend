@@ -29,6 +29,7 @@ public class ActivityController {
     private final AuditLogRepository logs;
     private final UserRepository users;
     private final AccessService access;
+    private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
 
     public record HistoryPage(List<ActivityDto> items, long total, int page, int size) {}
 
@@ -39,6 +40,7 @@ public class ActivityController {
     public HistoryPage history(@RequestParam(required = false) UUID userId, @RequestParam(required = false) String entity,
                                @RequestParam(required = false) String action,
                                @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "30") int size) {
+        subscriptions.requireFeature(Tenant.businessId(), "ACTIVITY_HISTORY", "Activity history");
         var pr = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
         var found = logs.search(Tenant.businessId(), userId == null ? null : userId.toString(), blank(entity), blank(action), pr);
         Set<UUID> ids = new HashSet<>();
@@ -58,6 +60,7 @@ public class ActivityController {
     @PreAuthorize("@access.has('DASHBOARD_VIEW')")
     @Transactional(readOnly = true)
     public List<ActivityDto> recent(@RequestParam(defaultValue = "20") int size) {
+        subscriptions.requireFeature(Tenant.businessId(), "ACTIVITY_HISTORY", "Activity history");
         List<AuditLog> rows = logs.findByBusinessIdOrderByCreatedAtDesc(Tenant.businessId(), PageRequest.of(0, Math.min(Math.max(size, 1), 50)));
         Set<UUID> ids = new HashSet<>();
         rows.forEach(r -> { if (r.getUserId() != null) ids.add(r.getUserId()); });

@@ -532,6 +532,7 @@ public class StoreOrderService {
 
     // ---------- merchant order management ----------
     public List<OrderDto> list(String status) {
+        subscriptions.requireFeature(Tenant.businessId(), "ONLINE_ORDERS", "Online order management");
         UUID bid = Tenant.businessId();
         List<StoreOrder> rows = status == null || status.isBlank() ? orders.findTop100ByBusinessIdOrderByCreatedAtDesc(bid)
             : orders.findTop100ByBusinessIdAndStatusOrderByCreatedAtDesc(bid, status.toUpperCase());
@@ -539,10 +540,12 @@ public class StoreOrderService {
     }
 
     public OrderDto get(UUID id) {
+        subscriptions.requireFeature(Tenant.businessId(), "ONLINE_ORDERS", "Online order management");
         return toDto(orders.findByIdAndBusinessId(id, Tenant.businessId()).orElseThrow(() -> ApiException.notFound("Order not found")), false);
     }
 
     public Map<String, Long> counts() {
+        subscriptions.requireFeature(Tenant.businessId(), "ONLINE_ORDERS", "Online order management");
         UUID bid = Tenant.businessId();
         Map<String, Long> m = new LinkedHashMap<>();
         for (String s : List.of("NEW", "CONFIRMED", "READY")) m.put(s, orders.countByBusinessIdAndStatus(bid, s));
@@ -556,6 +559,7 @@ public class StoreOrderService {
     }
 
     public OrderDto advance(UUID id, String to) {
+        subscriptions.requireFeature(Tenant.businessId(), "ONLINE_ORDERS", "Online order management");
         UUID bid = Tenant.businessId();
         String target = to == null ? "" : to.toUpperCase();
         OrderDto out = tx().execute(st -> {
@@ -575,6 +579,7 @@ public class StoreOrderService {
 
     /** Hands the order over. Pay-later orders must say how they were paid, and the sale is recorded at this moment. */
     public OrderDto complete(UUID id, CompleteRequest r) {
+        subscriptions.requireFeature(Tenant.businessId(), "ONLINE_ORDERS", "Online order management");
         UUID bid = Tenant.businessId();
         subscriptions.requireWritable(bid);
         StoreOrder cur = orders.findByIdAndBusinessId(id, bid).orElseThrow(() -> ApiException.notFound("Order not found"));
@@ -593,6 +598,7 @@ public class StoreOrderService {
     }
 
     public OrderDto cancel(UUID id) {
+        subscriptions.requireFeature(Tenant.businessId(), "ONLINE_ORDERS", "Online order management");
         UUID bid = Tenant.businessId();
         return tx().execute(st -> {
             StoreOrder o = mine(id);
@@ -607,6 +613,7 @@ public class StoreOrderService {
     }
 
     public OrderDto clearAttention(UUID id) {
+        subscriptions.requireFeature(Tenant.businessId(), "ONLINE_ORDERS", "Online order management");
         return tx().execute(st -> { StoreOrder o = mine(id); o.setAttention(null); return toDto(o, false); });
     }
 

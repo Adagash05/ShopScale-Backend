@@ -18,14 +18,19 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    public record ErrorResponse(int status, String error, String message, Map<String, String> fieldErrors, Instant timestamp) {}
+    public record ErrorResponse(int status, String error, String message, Map<String, String> fieldErrors, Instant timestamp,
+                                String code, Map<String, Object> details) {}
 
     private ResponseEntity<ErrorResponse> build(HttpStatus s, String message, Map<String, String> fields) {
-        return ResponseEntity.status(s).body(new ErrorResponse(s.value(), s.getReasonPhrase(), message, fields, Instant.now()));
+        return build(s, message, fields, null, null);
+    }
+
+    private ResponseEntity<ErrorResponse> build(HttpStatus s, String message, Map<String, String> fields, String code, Map<String, Object> details) {
+        return ResponseEntity.status(s).body(new ErrorResponse(s.value(), s.getReasonPhrase(), message, fields, Instant.now(), code, details));
     }
 
     @ExceptionHandler(ApiException.class)
-    ResponseEntity<ErrorResponse> api(ApiException e) { return build(e.getStatus(), e.getMessage(), null); }
+    ResponseEntity<ErrorResponse> api(ApiException e) { return build(e.getStatus(), e.getMessage(), null, e.getCode(), e.getDetails()); }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ErrorResponse> invalid(MethodArgumentNotValidException e) {

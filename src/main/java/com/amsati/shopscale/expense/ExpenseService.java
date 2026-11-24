@@ -59,7 +59,9 @@ public class ExpenseService {
             var existing = expenses.findByBusinessIdAndClientRequestId(bid, r.clientRequestId());
             if (existing.isPresent()) return dto(existing.get());
         }
-        subscriptions.requireExpenseCapacity(bid, expenses.countByBusinessId(bid) + 1);
+        subscriptions.lockForCreate(bid, "expenses");
+        subscriptions.requireExpenseCapacity(bid, w -> w == null ? expenses.countByBusinessId(bid)
+            : expenses.countByBusinessIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(bid, w.start(), w.end()));
         Business b = businesses.findById(bid).orElseThrow();
         Expense e = new Expense();
         e.setBusinessId(bid);

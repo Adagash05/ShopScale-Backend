@@ -66,6 +66,7 @@ public class CustomerService {
 
     @Transactional
     public CustomerDto create(CustomerRequest r) {
+        subscriptions.lockForCreate(Tenant.businessId(), "customers");
         subscriptions.requireCustomerCapacity(Tenant.businessId(), customers.countByBusinessId(Tenant.businessId()) + 1);
         Customer c = new Customer();
         c.setBusinessId(Tenant.businessId());

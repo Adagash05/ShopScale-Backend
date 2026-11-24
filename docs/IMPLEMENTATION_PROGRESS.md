@@ -89,3 +89,6 @@ Implemented V26 plus kitchen order lifecycle, wastage, production, restaurant re
 
 ## Invoicing, reminders and plan audit (Nov 2026)
 Invoices un-hidden; product picker and duplicate protection; unpaid and overdue invoice figures; Remind customer; ninth Help category. See `docs/INVOICING_REMINDERS_AND_PLAN_AUDIT.md`. Backend uncompiled and untested: run `mvn test`.
+
+## Plan entitlements revision (Nov 2026)
+V31: Free/Essential/Growth/Business allowances and features, atomic limits, WhatsApp reminder quota, server gates for export, Ask, best-selling reports, activity history and online orders. See `docs/PLAN_ENTITLEMENTS.md`. Java and JUnit were not run (Maven blocked); PostgreSQL and pure-logic checks were.

@@ -24,6 +24,10 @@ public class Plan {
     private Integer maxCustomers;
     private Integer maxExpenses;
     private Integer maxSuppliers;
+    /** Per billing month; null = unlimited, 0 = none. */
+    private Integer maxWhatsappReminders;
+    /** TOTAL = all expense records ever, MONTH = per billing month. */
+    private String expensePeriod = "TOTAL";
     private boolean recommended;
     private boolean active;
     private int sortOrder;

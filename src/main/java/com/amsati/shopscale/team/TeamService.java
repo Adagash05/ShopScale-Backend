@@ -111,6 +111,7 @@ public class TeamService {
         Membership m = memberships.findByIdAndBusinessId(membershipId, bid).orElseThrow(() -> ApiException.notFound("Team member not found"));
         assertCanManage(m);
         if (active && !m.isActive()) {
+            subscriptions.lockForCreate(bid, "users");
             subscriptions.requireUserCapacity(bid, memberships.countByBusinessIdAndActive(bid, true) + 1);
         }
         m.setActive(active);
@@ -152,6 +153,7 @@ public class TeamService {
         if (invitations.existsByBusinessIdAndEmailIgnoreCaseAndStatus(bid, mail, "PENDING")) {
             throw ApiException.conflict("There is already a pending invitation for that email. Resend or revoke it.");
         }
+        subscriptions.lockForCreate(bid, "users");
         long after = memberships.countByBusinessIdAndActive(bid, true) + invitations.countByBusinessIdAndStatus(bid, "PENDING") + 1;
         subscriptions.requireUserCapacity(bid, after);
 

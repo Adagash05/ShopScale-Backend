@@ -136,6 +136,7 @@ public class ProductService {
     @Transactional
     public ProductDto create(ProductRequest r) {
         UUID bid = Tenant.businessId();
+        subscriptions.lockForCreate(bid, "products");
         subscriptions.requireItemCapacity(bid, products.countByBusinessIdAndStatus(bid, ProductStatus.ACTIVE) + 1);
         validateCategory(bid, r.categoryId());
         validateVariantInputs(bid, null, r.variants());
@@ -218,6 +219,7 @@ public class ProductService {
         UUID bid = Tenant.businessId();
         Product p = products.findByIdAndBusinessId(id, bid).orElseThrow(() -> ApiException.notFound("Product not found"));
         if (p.getStatus() == ProductStatus.ACTIVE) return get(id);
+        subscriptions.lockForCreate(bid, "products");
         subscriptions.requireItemCapacity(bid, products.countByBusinessIdAndStatus(bid, ProductStatus.ACTIVE) + 1);
         p.setStatus(ProductStatus.ACTIVE);
         p.setUpdatedAt(Instant.now());

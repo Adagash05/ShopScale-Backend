@@ -79,6 +79,7 @@ public class BillingService {
         m.put("keyLooksValid", k.startsWith("sk_test_") || k.startsWith("sk_live_"));
         m.put("mode", k.startsWith("sk_live_") ? "live" : k.startsWith("sk_test_") ? "test" : null);
         m.put("encryptionConfigured", box.isConfigured());
+        m.put("encryptionKeySource", box.source().name());   // ENVIRONMENT, LOCAL_FILE (development only) or NONE
         m.put("returnUrlConfigured", frontendUrl != null && !frontendUrl.isBlank());
         return m;
     }
@@ -97,10 +98,13 @@ public class BillingService {
         boolean paidActive = cur != null && (cur.getStatus() == SubscriptionStatus.ACTIVE || cur.getStatus() == SubscriptionStatus.CANCELLED) && now.isBefore(cur.getCurrentPeriodEnd())
             && !SubscriptionService.FREE.equals(cur.getPlanCode()) && hasPaid(bid);
         if (!paidActive) return new Quote(target.getCode(), target.getName(), c, price, BigDecimal.ZERO, price, "NEW");
-        if (cur.getPlanCode().equals(target.getCode()) && cur.getBillingCycle() == c) return new Quote(target.getCode(), target.getName(), c, price, BigDecimal.ZERO, price, "RENEWAL");
+        if (cur.getPlanCode().equals(target.getCode()) && cur.getBillingCycle() == c) {
+            BigDecimal mine = cur.effectivePrice(target);   // a subscriber with an agreed price renews at it
+            return new Quote(target.getCode(), target.getName(), c, mine, BigDecimal.ZERO, mine, "RENEWAL");
+        }
         // Changing plan: unused time on the current plan is credited against the new one.
         Plan old = plans.findById(cur.getPlanCode()).orElseThrow();
-        BigDecimal oldPrice = Money.scale(cur.getBillingCycle() == BillingCycle.ANNUAL ? old.getAnnualPrice() : old.getMonthlyPrice());
+        BigDecimal oldPrice = cur.effectivePrice(old);   // credit what they actually pay
         long total = Math.max(1, Duration.between(cur.getCurrentPeriodStart(), cur.getCurrentPeriodEnd()).toSeconds());
         long left = Math.max(0, Duration.between(now, cur.getCurrentPeriodEnd()).toSeconds());
         BigDecimal credit = oldPrice.multiply(BigDecimal.valueOf(left)).divide(BigDecimal.valueOf(total), 2, RoundingMode.DOWN);
@@ -280,6 +284,7 @@ public class BillingService {
             Instant end = RenewalDates.periodEnd(start, anchor, p.getBillingCycle());
             s.setPlanCode(p.getPlanCode());
             s.setBillingCycle(p.getBillingCycle());
+            if (!renewal) s.clearLockedPrice();   // a new purchase or a plan/cycle change is at the current list price; a renewal keeps the agreed price
             s.setStatus(SubscriptionStatus.ACTIVE);
             s.setCurrentPeriodStart(renewal && start.isAfter(now) && s.getCurrentPeriodStart() != null ? s.getCurrentPeriodStart() : start);
             s.setCurrentPeriodEnd(end);
@@ -380,7 +385,7 @@ public class BillingService {
         String plan = null;
         if (paid) {
             Plan pl = plans.findById(s.getPlanCode()).orElse(null);
-            if (pl != null) { plan = pl.getCode(); amount = Money.scale(s.getBillingCycle() == BillingCycle.ANNUAL ? pl.getAnnualPrice() : pl.getMonthlyPrice()); }
+            if (pl != null) { plan = pl.getCode(); amount = s.effectivePrice(pl); }
         }
         PaymentDto lastPaid = payments.findTop50ByBusinessIdOrderByCreatedAtDesc(bid).stream().filter(p -> "SUCCESS".equals(p.getStatus())).findFirst().map(BillingService::dto).orElse(null);
         boolean auto = paid && s.isAutoRenew() && s.getStatus() != SubscriptionStatus.CANCELLED;

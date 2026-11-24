@@ -35,6 +35,16 @@ class PlanSeedTest {
         assertTrue(u.contains("recommended = true"));
         assertFalse(update("BUSINESS").contains("recommended = true"));
     }
+    @Test void growthPriceMigrationChangesOnlyThePrice() throws Exception {
+        String sql = new String(getClass().getResourceAsStream("/db/migration/V29__growth_price_15000.sql").readAllBytes());
+        String stmt = java.util.Arrays.stream(sql.split("\n")).filter(l -> !l.trim().startsWith("--")).collect(java.util.stream.Collectors.joining(" ")).trim();
+        assertEquals("UPDATE plans SET monthly_price = 15000.00, annual_price = 150000.00 WHERE code = 'GROWTH';", stmt);
+    }
+    @Test void growthPriceIs14999WithAnnualTenMonths() throws Exception {
+        String sql = new String(getClass().getResourceAsStream("/db/migration/V30__growth_price_14999_keep_existing_subscribers.sql").readAllBytes());
+        assertTrue(sql.contains("UPDATE plans SET monthly_price = 14999.00, annual_price = 149990.00 WHERE code = 'GROWTH';"));
+        assertFalse(sql.contains("max_users") || sql.contains("UPDATE plans SET monthly_price = 4999") || sql.contains("code = 'BUSINESS'") || sql.contains("code = 'ESSENTIAL'"));
+    }
     @Test void businessPlanUnlimitedIsNull() throws Exception {
         String u = update("BUSINESS");
         assertTrue(u.contains("monthly_price = 24999.00") && u.contains("annual_price = 249990.00") && u.contains("max_users = 10,") && u.contains("max_locations = 5,"));

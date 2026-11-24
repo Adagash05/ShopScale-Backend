@@ -110,7 +110,7 @@ public class RenewalService {
                 final int attempt = attemptNo;
                 var auth = authorizations.findByBusinessIdAndActiveTrue(s.getBusinessId()).filter(BillingAuthorization::isReusable).orElse(null);
                 Plan plan = plans.findById(s.getPlanCode()).filter(Plan::isActive).orElse(null);
-                BigDecimal price = plan == null ? null : Money.scale(s.getBillingCycle() == BillingCycle.ANNUAL ? plan.getAnnualPrice() : plan.getMonthlyPrice());
+                BigDecimal price = s.effectivePrice(plan);
                 if (auth == null || price == null || price.signum() <= 0) {
                     // Nothing can be charged: record it once, stop automatic charging, and tell the customer what to do.
                     SubscriptionRenewal r = newAttempt(s, due, attempt, null);

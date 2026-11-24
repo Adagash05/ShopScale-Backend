@@ -83,6 +83,7 @@ public class InvitationService {
 
         Membership m = memberships.findByUserIdAndBusinessId(user.getId(), bid).orElse(null);
         if (m != null && m.isActive()) throw ApiException.conflict("You are already part of this business");
+        subscriptions.lockForCreate(bid, "users");
         subscriptions.requireUserCapacity(bid, memberships.countByBusinessIdAndActive(bid, true) + 1);
         if (m == null) {
             m = new Membership();

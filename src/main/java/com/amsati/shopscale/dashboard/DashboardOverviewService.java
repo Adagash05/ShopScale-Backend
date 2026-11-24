@@ -71,6 +71,7 @@ public class DashboardOverviewService {
     private final PurchaseRepository purchases;
     private final SupplierRepository suppliers;
     private final com.amsati.shopscale.invoice.InvoiceReporting invoiceReporting;
+    private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
 
     public record Change(BigDecimal previous, BigDecimal changePercent) {}
     public record Comparison(boolean available, LocalDate from, LocalDate to, Change sales, Change moneyReceived, Change grossProfit, Change expenses) {}
@@ -92,7 +93,8 @@ public class DashboardOverviewService {
     public record Transaction(String type, String title, String detail, BigDecimal amount, Instant at, String status, String link) {}
     public record Overview(DashboardService.DashboardDto current, boolean financial, Comparison comparison, Trend trend,
                            List<BestProduct> bestProducts, List<BestCustomer> bestCustomers, long customersServed, Payments payments,
-                           Expenses expenses, Stock stock, Debts debts, boolean costDataComplete, List<Transaction> recent) {}
+                           Expenses expenses, Stock stock, Debts debts, boolean costDataComplete, List<Transaction> recent,
+                           boolean bestProductsAvailable, boolean bestCustomersAvailable) {}
 
     @Transactional(readOnly = true)
     public Overview overview(String range, LocalDate from, LocalDate to) {
@@ -122,7 +124,8 @@ public class DashboardOverviewService {
             Change cSales = new Change(pSales, DashboardMath.changePercent(cur.salesTotal(), pSales));
             Change cMoney = null, cGross = null, cExp = null;
             if (fin) {
-                BigDecimal pRepaid = Money.scale(customerPayments.sumBetween(bid, pStart, pEnd));
+                // Same definition as the current period: repayments on credit plus payments recorded on standalone invoices.
+                BigDecimal pRepaid = Money.scale(Money.scale(customerPayments.sumBetween(bid, pStart, pEnd)).add(invoiceReporting.paymentsReceived(bid, pStart, pEnd)));
                 BigDecimal pReceived = Money.scale(salePayments.breakdown(bid, SaleStatus.COMPLETED, pStart, pEnd).stream()
                     .map(m -> m.getAmount() == null ? BigDecimal.ZERO : m.getAmount()).reduce(BigDecimal.ZERO, BigDecimal::add).add(pRepaid));
                 BigDecimal pGross = pSales.subtract(pCost);
@@ -149,7 +152,10 @@ public class DashboardOverviewService {
         Trend trend = new Trend(daily, DashboardMath.weekly(dayList, salesList), DashboardMath.monthly(dayList, salesList));
 
         // ---- best products (by revenue) ----
-        var top = saleItems.topByRevenue(bid, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 10));
+        var planState = subscriptions.state(bid);
+        boolean bestProductsAllowed = planState.hasFeature("BEST_SELLING_PRODUCTS");
+        boolean bestCustomersAllowed = planState.hasFeature("BEST_SELLING_CUSTOMERS");
+        var top = !bestProductsAllowed ? List.<SaleItemRepository.TopProduct>of() : saleItems.topByRevenue(bid, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 10));
         Map<String, String> images = new HashMap<>();
         if (!top.isEmpty()) {
             for (Product p : products.findByBusinessIdAndNameIn(bid, top.stream().map(t -> t.getName()).collect(Collectors.toSet()))) {
@@ -161,7 +167,7 @@ public class DashboardOverviewService {
             DashboardMath.share(Money.scale(t.getRevenue()), cur.salesTotal()))).toList();
 
         // ---- best customers (named customers only; walk-in sales are not ranked) ----
-        var all = sales.bestCustomers(bid, SaleStatus.COMPLETED, start, end);
+        var all = !bestCustomersAllowed ? List.<SaleRepository.CustomerSales>of() : sales.bestCustomers(bid, SaleStatus.COMPLETED, start, end);
         Set<UUID> ids = all.stream().limit(10).map(c -> c.getCustomerId()).collect(Collectors.toSet());
         Map<UUID, BigDecimal> balances = new HashMap<>();
         if (fin && !ids.isEmpty()) for (Customer c : customers.findAllById(ids)) if (c.getBusinessId().equals(bid)) balances.put(c.getId(), Money.scale(c.getBalance()));
@@ -200,7 +206,8 @@ public class DashboardOverviewService {
             costComplete = saleItems.withoutCost(bid, SaleStatus.COMPLETED, start, end) == 0;
         }
 
-        return new Overview(cur, fin, comparison, trend, bestProducts, bestCustomers, all.size(), payments, exp, stock, debts, costComplete, transactions(bid, zone, today, fin));
+        return new Overview(cur, fin, comparison, trend, bestProducts, bestCustomers, all.size(), payments, exp, stock, debts, costComplete, transactions(bid, zone, today, fin),
+            bestProductsAllowed, bestCustomersAllowed);
     }
 
     /** The latest sales, customer repayments, expenses and stock receipts together, newest first. */

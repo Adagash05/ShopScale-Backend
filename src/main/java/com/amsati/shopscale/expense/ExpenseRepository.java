@@ -12,6 +12,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
     long countByBusinessId(java.util.UUID businessId);
+
+    /** Expense records created in [from, to): what a monthly allowance counts. */
+    long countByBusinessIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(java.util.UUID businessId, java.time.Instant from, java.time.Instant to);
     interface DayTotal {
         LocalDate getDay();
         BigDecimal getTotal();
@@ -28,7 +31,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID> {
         + "order by e.expenseDate desc, e.createdAt desc")
     Page<Expense> search(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to, Pageable pageable);
 
-    @Query("select sum(e.amount) from Expense e where e.businessId = :b and e.status = 'APPROVED' and e.expenseDate >= :from and e.expenseDate <= :to")
+    @Query("select coalesce(sum(e.amount), 0) from Expense e where e.businessId = :b and e.status = 'APPROVED' and e.expenseDate >= :from and e.expenseDate <= :to")
     BigDecimal sumBetween(@Param("b") UUID b, @Param("from") LocalDate from, @Param("to") LocalDate to);
 
     interface CategoryTotal {

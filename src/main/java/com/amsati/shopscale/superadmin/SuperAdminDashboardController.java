@@ -38,10 +38,12 @@ public class SuperAdminDashboardController {
                    (select count(*) from affiliate_referrals where first_paid_at is not null) as conversions
             from affiliates"""));
         out.put("subscriptionsByPlan", AdminSql.rows(jdbc, "select plan_code, status, count(*) as count from subscriptions group by plan_code, status order by plan_code, status"));
-        // Expected recurring revenue: list price of the plan for every currently paying subscription (annual plans spread over 12 months).
+        // Expected recurring revenue: the price each subscriber actually pays (their agreed price, else the plan's list price) for every currently paying subscription (annual plans spread over 12 months).
         // It is an expectation from plan prices, not money received.
         out.put("recurringRevenue", AdminSql.one(jdbc, """
-            select coalesce(sum(case when s.billing_cycle = 'ANNUAL' then p.annual_price / 12 else p.monthly_price end), 0) as expected_mrr,
+            select coalesce(sum(case when s.locked_price is not null and s.locked_plan_code = s.plan_code and s.locked_cycle = s.billing_cycle
+                                     then (case when s.billing_cycle = 'ANNUAL' then s.locked_price / 12 else s.locked_price end)
+                                     when s.billing_cycle = 'ANNUAL' then p.annual_price / 12 else p.monthly_price end), 0) as expected_mrr,
                    count(*) as paying_subscriptions
             from subscriptions s join plans p on p.code = s.plan_code
             where s.status in ('ACTIVE','PAST_DUE','GRACE_PERIOD') and s.plan_code <> 'FREE'"""));

@@ -21,16 +21,16 @@ public class SubscriptionController {
     private final PlanRepository planRepo;
 
     public record PlanDto(String code, String name, BigDecimal monthlyPrice, BigDecimal annualPrice,
-                          int maxUsers, int maxLocations, Integer maxItems, Integer maxCustomers, Integer maxExpenses, Integer maxSuppliers, boolean recommended, Set<String> features) {}
+                          int maxUsers, int maxLocations, Integer maxItems, Integer maxCustomers, Integer maxExpenses, Integer maxSuppliers, Integer maxWhatsappReminders, String expensePeriod, boolean recommended, Set<String> features) {}
 
     public record CurrentDto(String planCode, String planName, String status, BillingCycle billingCycle,
-                             Instant periodEnd, boolean writable, int maxUsers, int maxLocations, Integer maxItems, Integer maxCustomers, Integer maxExpenses, Integer maxSuppliers, String lapsedFrom, Set<String> features) {}
+                             Instant periodEnd, boolean writable, int maxUsers, int maxLocations, Integer maxItems, Integer maxCustomers, Integer maxExpenses, Integer maxSuppliers, Integer maxWhatsappReminders, String expensePeriod, String lapsedFrom, Set<String> features) {}
 
     @GetMapping("/plans")
     public List<PlanDto> plans() {
         return plans.findByActiveTrueOrderBySortOrderAsc().stream()
             .map(p -> new PlanDto(p.getCode(), p.getName(), p.getMonthlyPrice(), p.getAnnualPrice(),
-                p.getMaxUsers(), p.getMaxLocations(), p.getMaxItems(), p.getMaxCustomers(), p.getMaxExpenses(), p.getMaxSuppliers(), p.isRecommended(), new TreeSet<>(p.getFeatures())))
+                p.getMaxUsers(), p.getMaxLocations(), p.getMaxItems(), p.getMaxCustomers(), p.getMaxExpenses(), p.getMaxSuppliers(), p.getMaxWhatsappReminders(), p.getExpensePeriod(), p.isRecommended(), new TreeSet<>(p.getFeatures())))
             .toList();
     }
 
@@ -47,6 +47,6 @@ public class SubscriptionController {
     public CurrentDto current() {
         SubscriptionState s = service.state(Tenant.businessId());
         return new CurrentDto(s.planCode(), s.planName(), s.status(), s.billingCycle(), s.periodEnd(),
-            s.writable(), s.maxUsers(), s.maxLocations(), s.maxItems(), s.maxCustomers(), s.maxExpenses(), s.maxSuppliers(), s.lapsedFrom(), new TreeSet<>(s.features()));
+            s.writable(), s.maxUsers(), s.maxLocations(), s.maxItems(), s.maxCustomers(), s.maxExpenses(), s.maxSuppliers(), s.maxWhatsappReminders(), s.expensePeriod(), s.lapsedFrom(), new TreeSet<>(s.features()));
     }
 }

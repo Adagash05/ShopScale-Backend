@@ -1,4 +1,3 @@
-
 package com.amsati.shopscale.dashboard;
 
 import com.amsati.shopscale.business.Business;
@@ -59,6 +58,7 @@ public class DashboardService {
     private final SupplierRepository suppliers;
     private final AccessService access;
     private final com.amsati.shopscale.invoice.InvoiceReporting invoiceReporting;
+    private final com.amsati.shopscale.subscription.SubscriptionService subscriptions;
 
     public record MethodTotal(String method, BigDecimal amount) {}
     public record TopProduct(String name, BigDecimal quantity, BigDecimal revenue) {}
@@ -82,9 +82,7 @@ public class DashboardService {
 
     private BigDecimal salesBetween(UUID bid, LocalDate from, LocalDate to, ZoneId zone) {
         DateRange r = new DateRange(from, to);
-        SaleRepository.SalesAggregate a = sales.aggregate(
-                bid, SaleStatus.COMPLETED, r.start(zone), r.endExclusive(zone)
-        );
+        SaleRepository.SalesAggregate a = sales.aggregate(bid, SaleStatus.COMPLETED, r.start(zone), r.endExclusive(zone));
         return Money.scale(a == null ? null : a.getTotal());
     }
 
@@ -99,9 +97,7 @@ public class DashboardService {
         Instant start = r.start(zone);
         Instant end = r.endExclusive(zone);
 
-        SaleRepository.SalesAggregate agg = sales.aggregate(
-                bid, SaleStatus.COMPLETED, start, end
-        );
+        SaleRepository.SalesAggregate agg = sales.aggregate(bid, SaleStatus.COMPLETED, start, end);
         BigDecimal salesTotal = Money.scale(agg == null ? null : agg.getTotal());
         BigDecimal cost = Money.scale(agg == null ? null : agg.getCost());
         BigDecimal discounts = Money.scale(agg == null ? null : agg.getDiscount());
@@ -111,134 +107,57 @@ public class DashboardService {
 
         // Daily series, with empty days filled in so charts have a continuous axis.
         Map<LocalDate, SaleRepository.DayAggregate> saleDays = new HashMap<>();
-        sales.daily(bid, zone.getId(), start, end)
-                .forEach(d -> saleDays.put(LocalDate.parse(d.getDay()), d));
-
+        sales.daily(bid, zone.getId(), start, end).forEach(d -> saleDays.put(LocalDate.parse(d.getDay()), d));
         Map<LocalDate, BigDecimal> expenseDays = new HashMap<>();
-        expenses.daily(bid, r.from(), r.to())
-                .forEach(d -> expenseDays.put(d.getDay(), Money.scale(d.getTotal())));
-
+        expenses.daily(bid, r.from(), r.to()).forEach(d -> expenseDays.put(d.getDay(), Money.scale(d.getTotal())));
         List<DayPoint> daily = new ArrayList<>();
         for (LocalDate d = r.from(); !d.isAfter(r.to()); d = d.plusDays(1)) {
             SaleRepository.DayAggregate sd = saleDays.get(d);
             BigDecimal s = Money.scale(sd == null ? null : sd.getTotal());
             BigDecimal c = Money.scale(sd == null ? null : sd.getCost());
-
-            daily.add(new DayPoint(
-                    d,
-                    s,
-                    fin ? expenseDays.getOrDefault(d, Money.scale(null)) : null,
-                    fin ? s.subtract(c) : null
-            ));
+            daily.add(new DayPoint(d, s, fin ? expenseDays.getOrDefault(d, Money.scale(null)) : null, fin ? s.subtract(c) : null));
         }
 
-        List<TopProduct> top = saleItems.topProducts(
-                        bid, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 5)
-                ).stream()
-                .map(t -> new TopProduct(
-                        t.getName(),
-                        t.getQuantity() == null ? BigDecimal.ZERO : t.getQuantity(),
-                        Money.scale(t.getRevenue())
-                ))
-                .toList();
-
-        List<CategoryTotal> byCategory = saleItems.byCategory(
-                        bid, SaleStatus.COMPLETED, start, end
-                ).stream()
-                .map(c -> new CategoryTotal(
-                        c.getName() == null ? "No category" : c.getName(),
-                        Money.scale(c.getRevenue())
-                ))
-                .toList();
-
-        List<SlowItem> slow = variants.slowMoving(
-                        bid, ProductStatus.ACTIVE, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 5)
-                ).stream()
-                .map(s -> new SlowItem(
-                        s.getLabel() == null ? s.getName() : s.getName() + " (" + s.getLabel() + ")",
-                        s.getQuantity() == null ? BigDecimal.ZERO : s.getQuantity()
-                ))
-                .toList();
-
-        ProductVariantRepositoryHealth health =
-                ProductVariantRepositoryHealth.of(variants.stockHealth(bid, ProductStatus.ACTIVE));
-
-        Headline headline = new Headline(
-                salesBetween(bid, today, today, zone),
-                salesBetween(bid, today.minusDays(6), today, zone),
-                salesBetween(bid, today.withDayOfMonth(1), today, zone)
-        );
-
-        List<SaleSummary> recent =
-                sales.search(bid, start, end, PageRequest.of(0, 5)).getContent();
+        // Best-selling products are a Growth and Business feature. On other plans the data is never read, not just hidden.
+        boolean bestProductsAllowed = subscriptions.state(bid).hasFeature("BEST_SELLING_PRODUCTS");
+        List<TopProduct> top = !bestProductsAllowed ? List.<TopProduct>of() : saleItems.topProducts(bid, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 5)).stream()
+            .map(t -> new TopProduct(t.getName(), t.getQuantity() == null ? BigDecimal.ZERO : t.getQuantity(), Money.scale(t.getRevenue()))).toList();
+        List<CategoryTotal> byCategory = saleItems.byCategory(bid, SaleStatus.COMPLETED, start, end).stream()
+            .map(c -> new CategoryTotal(c.getName() == null ? "No category" : c.getName(), Money.scale(c.getRevenue()))).toList();
+        List<SlowItem> slow = variants.slowMoving(bid, ProductStatus.ACTIVE, SaleStatus.COMPLETED, start, end, PageRequest.of(0, 5)).stream()
+            .map(s -> new SlowItem(s.getLabel() == null ? s.getName() : s.getName() + " (" + s.getLabel() + ")", s.getQuantity() == null ? BigDecimal.ZERO : s.getQuantity())).toList();
+        ProductVariantRepositoryHealth health = ProductVariantRepositoryHealth.of(variants.stockHealth(bid, ProductStatus.ACTIVE));
+        Headline headline = new Headline(salesBetween(bid, today, today, zone), salesBetween(bid, today.minusDays(6), today, zone),
+            salesBetween(bid, today.withDayOfMonth(1), today, zone));
+        List<SaleSummary> recent = sales.search(bid, start, end, PageRequest.of(0, 5)).getContent();
 
         if (!fin) {
-            return new DashboardDto(
-                    r.from(), r.to(), false,
-                    salesTotal, count, null, null, null, null, null,
-                    null, null, null, null, null,
-                    variants.lowStockCount(bid, ProductStatus.ACTIVE),
-                    headline, daily,
-                    new StockHealth(health.out, health.low, health.healthy),
-                    List.of(), top, byCategory, slow, recent,
-                    products.countByBusinessIdAndStatus(bid, ProductStatus.ACTIVE),
-                    null
-            );
+            return new DashboardDto(r.from(), r.to(), false, salesTotal, count, null, null, null, null, null, null, null, null,
+                null, null, variants.lowStockCount(bid, ProductStatus.ACTIVE), headline, daily,
+                new StockHealth(health.out, health.low, health.healthy), List.of(), top, byCategory, slow, recent,
+                products.countByBusinessIdAndStatus(bid, ProductStatus.ACTIVE), null);
         }
 
-        List<MethodTotal> methods = salePayments.breakdown(
-                        bid, SaleStatus.COMPLETED, start, end
-                ).stream()
-                .map(m -> new MethodTotal(
-                        m.getMethod().name(),
-                        Money.scale(m.getAmount())
-                ))
-                .toList();
+        List<MethodTotal> methods = salePayments.breakdown(bid, SaleStatus.COMPLETED, start, end).stream()
+            .map(m -> new MethodTotal(m.getMethod().name(), Money.scale(m.getAmount()))).toList();
+        BigDecimal fromSales = methods.stream().map(MethodTotal::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Customers paying what they owed: repayments on credit sales, plus payments recorded on standalone invoices (those create no sale and no repayment row, so nothing is counted twice).
+        BigDecimal repayments = Money.scale(Money.scale(customerPayments.sumBetween(bid, start, end)).add(invoiceReporting.paymentsReceived(bid, start, end)));
 
-        BigDecimal fromSales = methods.stream()
-                .map(MethodTotal::amount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // Customer repayments and standalone invoice payments.
-        // Empty aggregate results must be treated as zero, not null.
-        BigDecimal customerRepayments = customerPayments.sumBetween(bid, start, end);
-        BigDecimal invoicePayments = invoiceReporting.paymentsReceived(bid, start, end);
-
-        BigDecimal repayments = Money.scale(
-                (customerRepayments == null ? BigDecimal.ZERO : customerRepayments)
-                        .add(invoicePayments == null ? BigDecimal.ZERO : invoicePayments)
-        );
-
-        return new DashboardDto(
-                r.from(), r.to(), true,
-                salesTotal, count, discounts, cost, gross, expensesTotal,
-                gross.subtract(expensesTotal),
-                Money.scale(fromSales.add(repayments)),
-                Money.scale(fromSales),
-                repayments,
-                Money.scale(customers.outstanding(bid)),
-                Money.scale(variants.inventoryValue(bid, ProductStatus.ACTIVE)),
-                variants.lowStockCount(bid, ProductStatus.ACTIVE),
-                headline, daily,
-                new StockHealth(health.out, health.low, health.healthy),
-                methods, top, byCategory, slow, recent,
-                products.countByBusinessIdAndStatus(bid, ProductStatus.ACTIVE),
-                Money.scale(suppliers.totalOwed(bid))
-        );
+        return new DashboardDto(r.from(), r.to(), true, salesTotal, count, discounts, cost, gross, expensesTotal,
+            gross.subtract(expensesTotal), Money.scale(fromSales.add(repayments)), Money.scale(fromSales), repayments,
+            Money.scale(customers.outstanding(bid)), Money.scale(variants.inventoryValue(bid, ProductStatus.ACTIVE)),
+            variants.lowStockCount(bid, ProductStatus.ACTIVE), headline, daily,
+            new StockHealth(health.out, health.low, health.healthy), methods, top, byCategory, slow, recent,
+            products.countByBusinessIdAndStatus(bid, ProductStatus.ACTIVE), Money.scale(suppliers.totalOwed(bid)));
     }
 
     /** Null-safe holder for the stock health aggregate (a business with no items yields nulls). */
     private record ProductVariantRepositoryHealth(long out, long low, long healthy) {
         static ProductVariantRepositoryHealth of(ProductVariantRepository.StockHealth h) {
-            if (h == null) {
-                return new ProductVariantRepositoryHealth(0, 0, 0);
-            }
-
-            return new ProductVariantRepositoryHealth(
-                    h.getOutOfStock() == null ? 0 : h.getOutOfStock(),
-                    h.getLow() == null ? 0 : h.getLow(),
-                    h.getHealthy() == null ? 0 : h.getHealthy()
-            );
+            if (h == null) return new ProductVariantRepositoryHealth(0, 0, 0);
+            return new ProductVariantRepositoryHealth(h.getOutOfStock() == null ? 0 : h.getOutOfStock(),
+                h.getLow() == null ? 0 : h.getLow(), h.getHealthy() == null ? 0 : h.getHealthy());
         }
     }
 }

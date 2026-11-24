@@ -195,7 +195,7 @@ More > Notifications (low stock, expenses awaiting approval, new online orders, 
 More > Sales reports (period totals grouped by employee, location, payment type or sales channel) and the dashboard (trend, top products, categories). Several "advanced/consolidated reporting" flags exist in the plan table but have no separate screens (Partial).
 
 ### 4.12 Data export (More > Export data)
-CSV of products and stock, customers (with amounts owed), sales, expenses. Cells beginning with `=`, `+`, `-`, `@` are prefixed so spreadsheets cannot run them. Each export is audit-logged. *Essential and above; Free has no export.* **Import is not implemented.**
+CSV of products and stock, customers (with amounts owed), sales, expenses. Cells beginning with `=`, `+`, `-`, `@` are prefixed so spreadsheets cannot run them. Each export is audit-logged. *Growth and Business only; Free and Essential have no export (enforced on the server).* **Import is not implemented.**
 
 ### 4.13 Online store, orders, public storefront
 Section 7. *Growth and above.*
@@ -215,14 +215,14 @@ Section 5 and 6. Page: More > Plan.
 ### 5.1 Approved configuration (V15, verified in the database)
 | Plan | Monthly | Annual | Users | Locations | Products | Customers | Expenses | Suppliers |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Free | ₦0 | ₦0 | 1 | 1 | 15 | 15 | 15 | 5 |
-| Essential | ₦4,999 | ₦49,990 | 2 | 1 | 100 | 100 | 100 | 20 |
-| **Growth (recommended)** | ₦11,999 | ₦119,990 | 5 | 2 | 500 | Unlimited | Unlimited | 50 |
+| Free | ₦0 | ₦0 | 1 | 1 | 10 | 10 | 10 (total) | 0 |
+| Essential | ₦4,999 | ₦49,990 | 2 | 1 | 50 | 50 | 50 per billing month | 10 |
+| **Growth (recommended)** | ₦14,999 | ₦149,990 | 5 | 2 | 200 | Unlimited | Unlimited | 50 |
 | Business | ₦24,999 | ₦249,990 | 10 | 5 | Unlimited | Unlimited | Unlimited | Unlimited |
 
 "Unlimited" is stored as NULL. Annual price = 10 x monthly ("2 months free"). The old STARTER plan is hidden, not deleted. Prices, limits and features live in the `plans` and `plan_features` tables, **not in code**; the pricing pages read them from the API.
 
-Feature split: Free = basic POS, sales, stock and stock history, expenses, customers and credit, basic dashboard. Essential adds CSV export, purchase orders, supplier balances, cash accounts, improved dashboard, wholesale pricing. Growth adds the online store and orders, branch transfers, staff permissions, advanced reports/inventory, location reporting, cash reconciliation. Business adds custom domain, advanced finance and staff permissions, activity history, consolidated reporting, priority support. Several flags (staff permissions, advanced reports, advanced finance, priority support, consolidated reporting) are assigned but have no dedicated enforcement or screen yet.
+Feature split: Free = basic POS, sales, stock and stock history, expenses, customers and credit, basic dashboard. Essential adds WhatsApp invoice reminders (20 a month), purchase orders, supplier balances, cash accounts, improved dashboard, wholesale pricing. Growth adds CSV export, Ask ShopScale, best-selling product and customer reports, activity history, WhatsApp reminders (50 a month), the online store and orders, branch transfers, staff permissions, advanced reports/inventory, location reporting, cash reconciliation. Business adds unlimited reminders and the higher limits, custom domain, advanced finance and staff permissions, consolidated reporting, priority support. Several flags (staff permissions, advanced reports, advanced finance, priority support, consolidated reporting) are assigned but have no dedicated enforcement or screen yet.
 
 ### 5.2 Lifecycle
 ```mermaid

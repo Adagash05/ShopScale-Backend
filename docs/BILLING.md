@@ -1,7 +1,7 @@
 # ShopScale billing: repairs, automatic renewal, test report and deployment
 
 Scope: AMSATI subscription billing (Paystack platform account). Merchant storefront payments (each merchant's own Paystack key) were inspected and **not changed**.
-Prices and plan limits come from `V15__final_pricing_limits_features.sql` and were **not changed** (verified after applying V1-V19: FREE 0/0, ESSENTIAL 4,999/49,990, GROWTH 11,999/119,990, BUSINESS 24,999/249,990).
+Prices and plan limits come from `V15__final_pricing_limits_features.sql` and were **not changed** (verified after applying V1-V19: FREE 0/0, ESSENTIAL 4,999/49,990, GROWTH 11,999/119,990, BUSINESS 24,999/249,990). **Update (V30): Growth is now 14,999/149,990 (new subscribers; existing paying Growth subscribers keep 11,999/119,990 until they change plan or cycle)**; Essential, Business and Free are unchanged.
 
 ## A. Root-cause report (found by reading the code, not by guessing)
 | # | File | Defect | Effect | Correction | How checked |
